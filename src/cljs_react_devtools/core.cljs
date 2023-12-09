@@ -1,7 +1,8 @@
 (ns cljs-react-devtools.core
   (:require [clojure.string :as str]
             [uix.core :as uix :refer [$ defui]]
-            [uix.dom]))
+            [uix.dom]
+            [goog.functions :as fns]))
 
 (def colors
   {:highlight-text "#8835ff"
@@ -301,14 +302,73 @@
                       ($ data-view {:data hook :style {:margin 0}}))))))
            hooks)))))
 
+(uix/defhook use-resize-handler [{:keys [set-size dir max min]
+                                  :or {max 100 min 0}}]
+  (let [[active? set-active] (uix/use-state false)
+        ref (uix/use-ref)]
+    (uix/use-effect
+      (fn []
+        (when active?
+          (let [move-handler (fn [^js e]
+                               (let [node @ref]
+                                 (set-size
+                                   #(let [v (+ %
+                                               (*
+                                                 (/ 100 (if (= dir :vertical) js/window.innerHeight js/window.innerWidth))
+                                                 (if (= dir :vertical)
+                                                   (- (.-y (.getBoundingClientRect node))
+                                                      (.-y e))
+                                                   (- (.-x (.getBoundingClientRect node))
+                                                      (.-x e)))))]
+                                      (if (>= max v min)
+                                        v
+                                        %)))))
+                up-handler #(set-active false)]
+            (.addEventListener js/document "mousemove" move-handler)
+            (.addEventListener js/document "mouseup" up-handler)
+            (fn []
+              (.removeEventListener js/document "mousemove" move-handler)
+              (.removeEventListener js/document "mouseup" up-handler)))))
+      [active? set-size dir max min])
+    [ref set-active]))
+
+(defui resize-handle [{:keys [set-size dir max min] :as props}]
+  (let [[ref set-active] (use-resize-handler props)]
+    ($ :div {:ref ref
+             :on-mouse-down #(set-active true)
+             :style {:height (if (= dir :vertical) "4px" "100%")
+                     :width (if (= dir :vertical) "100vw" "4px")
+                     :position :absolute
+                     :left 0
+                     :top 0
+                     :cursor (if (= dir :vertical) :ns-resize :ew-resize)}})))
+
+(uix/defhook use-size [v k]
+  (let [[size set-size] (uix/use-state #(if-let [n (js/localStorage.getItem (str k))]
+                                          (let [n (js/parseFloat n 10)]
+                                            (if (js/Number.isNaN n)
+                                              v
+                                              n))
+                                          v))
+        f (uix/use-memo (fn []
+                          (fns/debounce #(js/localStorage.setItem (str k) %) 100))
+                        [k])]
+    (uix/use-effect
+      #(f size)
+      [size f])
+    [size set-size]))
+
 (defui inspector [{:keys [state]}]
-  (let [{:keys [selected]} state]
+  (let [{:keys [selected]} state
+        [size set-size] (use-size 35 :cljs-devtools-inspector/ui-size)]
     ($ :div
-       {:style {:width          "35%"
+       {:style {:width          (str size "%")
                 :border-left    "1px solid #8632ff75"
                 :padding        "0 16px 32px 16px"
                 :display        :flex
-                :flex-direction :column}}
+                :flex-direction :column
+                :position :relative}}
+       ($ resize-handle {:set-size set-size :dir :horizontal :max 50 :min 20})
        (when selected
          ($ :<>
             ($ button
@@ -382,19 +442,21 @@
                                      (some #(when (str/starts-with? % "__reactContainer") (aget root %))))))
                             [root])
         [state set-state] (uix/use-state {:hide-dom? true
-                                          :selected  (when (and root fiber) (.-child fiber))})]
+                                          :selected  (when (and root fiber) (.-child fiber))})
+        [size set-size] (use-size 35 :cljs-devtools/ui-size)]
     ($ :div
        {:style {:position   :fixed
                 :z-index    9999
                 :left       0
                 :bottom     0
                 :width      "100vw"
-                :height     "35vh"
+                :height     (str size "vh")
                 :background "#fff"
                 :color      "#51485f"
                 :font       "normal 14px sans-serif"
                 :display    :flex
                 :border-top "2px solid #8632ff75"}}
+       ($ resize-handle {:set-size set-size :dir :vertical :min 10 :max 90})
        (cond
          (or (not root) (not fiber))
          ($ :div
