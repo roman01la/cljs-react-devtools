@@ -470,7 +470,9 @@
           ($ :label
              {:for "cljs-devtools_hide-mo-nodes"}
              "Hide DOM nodes"))
-       ($ :div {:style {:color "#a769ff"}}
+       ($ :div {:style {:color "#a769ff"
+                        :opacity (if (str/blank? hint) 0 1)
+                        :transition "opacity 100ms ease-in-out"}}
           hint))))
 
 (defui devtools* [{:keys [root]}]
