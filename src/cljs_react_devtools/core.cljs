@@ -205,11 +205,16 @@
             (when (.-next mem-state)
               (node->hooks (.-next mem-state)))))))
 
+(defn node->rf-subs [^js node]
+  (->> (.. node -stateNode -cljsRatom -captured)
+       (keep #(when (.-__devtools-label ^js %)
+                [($ data-view {:data (.-__devtools-label ^js %) :style {:margin 0}})
+                 (.-state %)]))))
+
 (defn node->reactions [^js node]
   (->> (.. node -stateNode -cljsRatom -captured)
-       (map #(if (.. ^js % -state -generation)
-               ["ratom" (.-state (aget (.-state %) 0))]
-               ["re-frame sub" (.-state %)]))))
+       (keep #(when (.. ^js % -state -generation)
+                ["ratom" (.-state (aget (.-state %) 0))]))))
 
 (defn camel-case->kebab-case [s]
   (->> (str/split s #"(?<=[a-z])(?=[A-Z])")
@@ -225,20 +230,35 @@
      children))
 
 (defui reactions-view [{:keys [node]}]
-  (let [reactions (node->reactions node)]
-    (when (seq reactions)
-      ($ :div {:style {:margin "8px 0 0 0"}}
-         ($ section-header "reactions")
-         (map-indexed
-           (fn [idx [type reaction]]
-             ($ :div
-                {:key   idx
-                 :style {:display :flex :gap 8}}
-                ($ :span (str type ":"))
-                ($ data-view
-                   {:data  reaction
-                    :style {:margin 0}})))
-           reactions)))))
+  (let [reactions (node->reactions node)
+        subs (node->rf-subs node)]
+    ($ :<>
+      (when (seq reactions)
+        ($ :div {:style {:margin "8px 0 0 0"}}
+           ($ section-header "reactions")
+           (map-indexed
+             (fn [idx [type reaction]]
+               ($ :div
+                  {:key   idx
+                   :style {:display :flex :gap 8}}
+                  ($ :span type)
+                  ($ data-view
+                     {:data  reaction
+                      :style {:margin 0}})))
+             reactions)))
+      (when (seq subs)
+        ($ :div {:style {:margin "8px 0 0 0"}}
+           ($ section-header "re-frame subscriptions")
+           (map-indexed
+             (fn [idx [type sub]]
+               ($ :div
+                  {:key   idx
+                   :style {:display :flex :gap 8}}
+                  ($ :span type)
+                  ($ data-view
+                     {:data  sub
+                      :style {:margin 0}})))
+             subs))))))
 
 (defui hooks-view [{:keys [node]}]
   (let [hooks (node->hooks (.-memoizedState node))]
@@ -415,6 +435,18 @@
                         ($ inspector {:state     state
                                       :set-state set-state}))))))))
 
+(defn high-jack-re-frame []
+  (when-let [subscribe js/re-frame.core.subscribe]
+    (set! js/re-frame.core.subscribe
+          (fn
+            ([query]
+             (let [ret (subscribe query)]
+               (set! (.-__devtools-label ^js ret) (first query))
+               ret))
+            ([query dynv]
+             (let [ret (subscribe query dynv)]
+               (set! (.-__devtools-label ^js ret) (first query))
+               ret))))))
 
 
 (defonce __init
@@ -422,6 +454,7 @@
            (defn init! [{:keys [root] :as opts}]
              (when-not @init?
                (reset! init? true)
+               (high-jack-re-frame)
                (js/setTimeout
                  (fn []
                    (let [node (js/document.createElement "div")
