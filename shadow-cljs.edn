@@ -1,0 +1,7 @@
+{:deps true
+ :dev-http {3000 "./"}
+ :builds
+ {:examples {:target :browser
+             :output-dir "out"
+             :asset-path "/out"
+             :modules {:main {:entries [example.core]}}}}}
