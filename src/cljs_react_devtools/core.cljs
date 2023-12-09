@@ -165,40 +165,44 @@
                      ($ :span close))))))
          data))))
 
+(defonce hint-ctx (uix/create-context))
+
 (defui data-view
   [{:keys [data style key?]}]
-  ($ :pre
-     {:style    (merge {:margin "0 0 0 8px"
-                        :cursor      :pointer
-                        :font-size   "12px"}
-                       style)
-      :on-click #(do
-                   (when-not key?
+  (let [set-active (uix/use-context hint-ctx)]
+    ($ :pre
+       {:style    (merge {:margin "0 0 0 8px"
+                          :cursor      :pointer
+                          :font-size   "12px"}
+                         style)
+        :on-mouse-enter #(set-active true)
+        :on-mouse-leave #(set-active false)
+        :on-click #(when-not key?
                      (.stopPropagation %)
-                     (js/console.dir data)))}
-     (cond
-       (map? data) ($ data-view-map {:data data})
-       (vector? data) ($ data-view-seq {:data data :brackets ["[" "]"]})
-       (set? data) ($ data-view-seq {:data data :brackets ["#{" "}"]})
-       (number? data) ($ :span {:style {:color "#216aef"}} (pr-str data))
-       (nil? data) ($ :span {:style {:color "#216aef"}} (pr-str data))
-       (boolean? data) ($ :span {:style {:color "#216aef"}} (pr-str data))
-       (string? data) ($ :span {:style {:color "#388e28"}} (pr-str data))
-       (keyword? data) ($ :span {:style {:color     "#c94d22"
-                                         :text-wrap :nowrap}}
-                          (pr-str data))
-       (fn? data) ($ :span {:style {:color "#216aef"}} (str "fn<"
-                                                            (if (str/blank? (.-name data))
-                                                              "anonymous"
-                                                              (.-name data))
-                                                            ">"))
-       (= js/Object (.-constructor data)) ($ data-view-map
-                                             {:data       data
-                                              :tag        "js"
-                                              :entries-fn js/Object.entries
-                                              :key-fn     keyword})
-       (= js/Array (.-constructor data)) ($ data-view-seq {:data data :tag "js" :brackets ["[" "]"]})
-       :else (pr-str data))))
+                     (js/console.dir data))}
+       (cond
+         (map? data) ($ data-view-map {:data data})
+         (vector? data) ($ data-view-seq {:data data :brackets ["[" "]"]})
+         (set? data) ($ data-view-seq {:data data :brackets ["#{" "}"]})
+         (number? data) ($ :span {:style {:color "#216aef"}} (pr-str data))
+         (nil? data) ($ :span {:style {:color "#216aef"}} (pr-str data))
+         (boolean? data) ($ :span {:style {:color "#216aef"}} (pr-str data))
+         (string? data) ($ :span {:style {:color "#388e28"}} (pr-str data))
+         (keyword? data) ($ :span {:style {:color     "#c94d22"
+                                           :text-wrap :nowrap}}
+                            (pr-str data))
+         (fn? data) ($ :span {:style {:color "#216aef"}} (str "fn<"
+                                                              (if (str/blank? (.-name data))
+                                                                "anonymous"
+                                                                (.-name data))
+                                                              ">"))
+         (= js/Object (.-constructor data)) ($ data-view-map
+                                               {:data       data
+                                                :tag        "js"
+                                                :entries-fn js/Object.entries
+                                                :key-fn     keyword})
+         (= js/Array (.-constructor data)) ($ data-view-seq {:data data :tag "js" :brackets ["[" "]"]})
+         :else (pr-str data)))))
 
 (defn node->props [^js node]
   (let [el-type (.-elementType node)]
@@ -377,9 +381,16 @@
       [size f])
     [size set-size]))
 
-(defui inspector [{:keys [state]}]
+(defui inspector [{:keys [state set-hint]}]
   (let [{:keys [selected]} state
-        [size set-size] (use-size 35 :cljs-devtools-inspector/ui-size)]
+        [size set-size] (use-size 35 :cljs-devtools-inspector/ui-size)
+        [active? set-active] (uix/use-state false)]
+    (uix/use-effect
+      (fn []
+        (if active?
+          (set-hint "click on the value to log it to console")
+          (set-hint "")))
+      [active? set-hint])
     ($ :div
        {:style {:width          (str size "%")
                 :border-left    "1px solid #8632ff75"
@@ -389,22 +400,25 @@
                 :position :relative}}
        ($ resize-handle {:set-size set-size :dir :horizontal :max 50 :min 20})
        (when selected
-         ($ :<>
-            ($ button
-               {:on-click #(js/console.log (.-elementType selected))
-                :style    {:margin  "8px 0 0 0"
-                           :display :block
-                           :color   (:highlight-text colors)
-                           :width   :fit-content}}
-               (node->name selected))
-            ($ :div {:style {:margin     "8px 0 0 0"
-                             :overflow-y :auto
-                             :flex       1}}
-               ($ section-header "props")
-               (node->props selected)
-               (when (reagent-node? selected)
-                 ($ reactions-view {:node selected}))
-               ($ hooks-view {:node selected})))))))
+         ($ (.-Provider hint-ctx) {:value set-active}
+           ($ :<>
+              ($ button
+                 {:on-click #(js/console.log (.-elementType selected))
+                  :on-mouse-enter #(set-active true)
+                  :on-mouse-leave #(set-active false)
+                  :style    {:margin  "8px 0 0 0"
+                             :display :block
+                             :color   (:highlight-text colors)
+                             :width   :fit-content}}
+                 (node->name selected))
+              ($ :div {:style {:margin     "8px 0 0 0"
+                               :overflow-y :auto
+                               :flex       1}}
+                 ($ section-header "props")
+                 (node->props selected)
+                 (when (reagent-node? selected)
+                   ($ reactions-view {:node selected}))
+                 ($ hooks-view {:node selected}))))))))
 
 (def error-boundary
   (uix/create-error-boundary
@@ -438,13 +452,14 @@
               "report an issue"))
         children))))
 
-(defui toolbar [{:keys [state set-state]}]
+(defui toolbar [{:keys [state set-state hint]}]
   (let [{:keys [hide-dom?]} state]
     ($ :div
        {:style {:padding       "4px 8px"
                 :border-bottom "1px solid #8632ff75"
                 :font-size     "12px"
                 :display :flex
+                :justify-content :space-between
                 :gap 32}}
        ($ :div
           ($ :input#cljs-devtools_hide-mo-nodes
@@ -454,7 +469,9 @@
               :style     {:margin "0 4px 0 0"}})
           ($ :label
              {:for "cljs-devtools_hide-mo-nodes"}
-             "Hide DOM nodes")))))
+             "Hide DOM nodes"))
+       ($ :div {:style {:color "#a769ff"}}
+          hint))))
 
 (defui devtools* [{:keys [root]}]
   (let [fiber (uix/use-memo (fn []
@@ -464,7 +481,8 @@
                             [root])
         [state set-state] (uix/use-state {:hide-dom? true
                                           :selected  (when (and root fiber) (.-child fiber))})
-        [size set-size] (use-size 35 :cljs-devtools/ui-size)]
+        [size set-size] (use-size 35 :cljs-devtools/ui-size)
+        [hint set-hint] (uix/use-state "")]
     ($ :div
        {:style {:position   :fixed
                 :z-index    9999
@@ -472,7 +490,7 @@
                 :bottom     0
                 :width      "100vw"
                 :height     (str size "vh")
-                :background "#fff"
+                :background "#fefdff"
                 :color      "#51485f"
                 :font       "normal 14px sans-serif"
                 :display    :flex
@@ -504,21 +522,24 @@
                   ($ :div {:style {:flex 1}}
                      ($ toolbar
                         {:state     state
-                         :set-state set-state})
+                         :set-state set-state
+                         :hint hint})
                      ($ :div {:style {:display    :flex
                                       :flex       1
                                       :max-height "100%"
                                       :min-height "100%"}}
                         ($ :div {:style {:flex       1
                                          :overflow-y :auto
-                                         :padding    "8px 0"}}
+                                         :padding    "8px 0"
+                                         :background "#fbfafd"}}
                            (for [node (node->siblings (.-child fiber))]
                              ($ tree-view {:node      node
                                            :state     state
                                            :set-state set-state
                                            :key       (.-index node)})))
                         ($ inspector {:state     state
-                                      :set-state set-state}))))))))
+                                      :set-state set-state
+                                      :set-hint set-hint}))))))))
 
 (defui devtools [{:keys [shortcut] :as props}]
   (let [[visible? set-visible] (uix/use-state #(let [v (js/JSON.parse (js/localStorage.getItem ":cljs-devtools/visible?"))]
