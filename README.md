@@ -4,6 +4,14 @@
 
 https://github.com/roman01la/cljs-react-devtools/assets/1355501/5f41198c-c0f5-409a-bb4d-3fd6cc4c375d
 
+## Features
+- React component tree
+- Props inspector
+- Hooks inspector
+- Reagent reactions inspector
+- re-frame subscriptions inspector
+- Click on a value to log it to the console
+
 Supported React wrappers:
 - UIx
 - Reagent
