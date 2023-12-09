@@ -2,7 +2,7 @@
 
 > ⚠️ _EXPERIMENTAL_
 
-<video src="./demo.mp4" controls />
+https://github.com/roman01la/cljs-react-devtools/assets/1355501/5f41198c-c0f5-409a-bb4d-3fd6cc4c375d
 
 Supported React wrappers:
 - UIx
