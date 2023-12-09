@@ -503,7 +503,8 @@
                                       :set-state set-state}))))))))
 
 (defui devtools [{:keys [shortcut] :as props}]
-  (let [[visible? set-visible] (uix/use-state #(nil? (js/JSON.parse (js/localStorage.getItem ":cljs-devtools/visible?"))))]
+  (let [[visible? set-visible] (uix/use-state #(let [v (js/JSON.parse (js/localStorage.getItem ":cljs-devtools/visible?"))]
+                                                 (or (nil? v) v)))]
     (uix/use-effect
      (fn []
        (when (string? shortcut)
