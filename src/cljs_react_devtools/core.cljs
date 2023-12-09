@@ -363,7 +363,7 @@
                      :position :absolute
                      :left 0
                      :top 0
-                     :background "#fcfaff"
+                     :background "#fcf8ff"
                      :cursor (if (= dir :vertical) :ns-resize :ew-resize)}})))
 
 (uix/defhook use-size [v k]
@@ -394,7 +394,7 @@
     ($ :div
        {:style {:width          (str size "%")
                 :border-left    "1px solid #8632ff75"
-                :padding        "0 16px 32px 16px"
+                :padding        "0 8px 32px"
                 :display        :flex
                 :flex-direction :column
                 :position :relative}}
