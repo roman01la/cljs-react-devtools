@@ -341,6 +341,7 @@
                      :position :absolute
                      :left 0
                      :top 0
+                     :background "#fcfaff"
                      :cursor (if (= dir :vertical) :ns-resize :ew-resize)}})))
 
 (uix/defhook use-size [v k]
@@ -424,18 +425,20 @@
     ($ :div
        {:style {:padding       "4px 8px"
                 :border-bottom "1px solid #8632ff75"
-                :font-size     "12px"}}
+                :font-size     "12px"
+                :display :flex
+                :gap 32}}
        ($ :div
-          ($ :input#uix-devtools_hide-mo-nodes
+          ($ :input#cljs-devtools_hide-mo-nodes
              {:type      :checkbox
               :checked   hide-dom?
               :on-change #(set-state (update state :hide-dom? not))
               :style     {:margin "0 4px 0 0"}})
           ($ :label
-             {:for "uix-devtools_hide-mo-nodes"}
+             {:for "cljs-devtools_hide-mo-nodes"}
              "Hide DOM nodes")))))
 
-(defui devtools [{:keys [root]}]
+(defui devtools* [{:keys [root]}]
   (let [fiber (uix/use-memo (fn []
                               (when root
                                 (->> (js/Object.keys root)
@@ -499,7 +502,35 @@
                         ($ inspector {:state     state
                                       :set-state set-state}))))))))
 
-(defn high-jack-re-frame []
+(defui devtools [{:keys [shortcut] :as props}]
+  (let [[visible? set-visible] (uix/use-state #(nil? (js/JSON.parse (js/localStorage.getItem ":cljs-devtools/visible?"))))]
+    (uix/use-effect
+     (fn []
+       (when (string? shortcut)
+         (let [shortcut (str/split shortcut #"-")]
+           (when (seq shortcut)
+             (let [down-handler (fn [^js e]
+                                  (when
+                                    (->> shortcut
+                                         (every? #(case %
+                                                    "Control" (.-ctrlKey e)
+                                                    "Alt" (.-altKey e)
+                                                    "Meta" (.-metaKey e)
+                                                    "Shift" (.-shiftKey e)
+                                                    (= % (.-key e)))))
+                                    (set-visible not)))]
+               (.addEventListener js/window "keydown" down-handler)
+               (fn []
+                 (.removeEventListener js/window "keydown" down-handler)))))))
+     [shortcut])
+    (uix/use-effect
+      (fn []
+        (js/localStorage.setItem ":cljs-devtools/visible?" visible?))
+      [visible?])
+    (when visible?
+      ($ devtools* props))))
+
+(defn hijack-re-frame []
   (when-let [subscribe js/re-frame.core.subscribe]
     (set! js/re-frame.core.subscribe
           (fn
@@ -512,18 +543,17 @@
                (set! (.-__devtools-label ^js ret) (first query))
                ret))))))
 
+(defonce ^:private initialized? (atom false))
 
-(defonce __init
-         (let [init? (atom false)]
-           (defn init! [{:keys [root] :as opts}]
-             (when-not @init?
-               (reset! init? true)
-               (high-jack-re-frame)
-               (js/setTimeout
-                 (fn []
-                   (let [node (js/document.createElement "div")
-                         _ (js/document.body.append node)
-                         root (uix.dom/create-root node)]
-                     (uix.dom/render-root ($ devtools {:root (:root opts)}) root)
-                     nil))
-                 100)))))
+(defn init! [{:keys [root shortcut] :as opts}]
+  (when-not @initialized?
+    (reset! initialized? true)
+    (hijack-re-frame)
+    (js/setTimeout
+      (fn []
+        (let [node (js/document.createElement "div")
+              _ (js/document.body.append node)
+              root (uix.dom/create-root node)]
+          (uix.dom/render-root ($ devtools opts) root)
+          nil))
+      100)))

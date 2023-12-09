@@ -21,8 +21,8 @@ Supported React wrappers:
 2. Initialize DevTools
 ```clojure
 (cljs-react-devtools.core/init!
-         ;; DOM node where React app is rendered
-  {:root (js/document.getElementById "root")}) 
+  {:root (js/document.getElementById "root")
+   :shortcut "Control-Shift-Meta-R"}) ;; toggles DevTools visibility
 ```
 
 ## Run example in this repo
