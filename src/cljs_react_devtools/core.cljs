@@ -349,12 +349,14 @@
               (if (instance? js/Error error)
                 (.-message error)
                 error))
-           ($ button
-              {:style {:background    "#ff784b"
+           ($ :a
+              {:href "https://github.com/roman01la/cljs-react-devtools"
+               :target "blank_"
+               :style {:background    "#ff784b"
                        :color         "#faf0ec"
                        :padding       "8px 12px"
                        :border-radius "3px"}}
-              "report the issue"))
+              "report an issue"))
         children))))
 
 (defui toolbar [{:keys [state set-state]}]
