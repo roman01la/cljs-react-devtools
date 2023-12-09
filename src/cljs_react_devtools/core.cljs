@@ -64,24 +64,42 @@
                       :padding    0}
                      (filter (comp some? val) %)))))
 
+(def icon-chevron-down
+  ($ :svg {:xmlns "http://www.w3.org/2000/svg" :fill "none" :viewBox "0 0 24 24" :stroke-width "4" :stroke "currentColor"
+           :width 8 :height 8}
+     ($ :path {:stroke-linecap "round" :stroke-linejoin "round" :d "M19.5 8.25l-7.5 7.5-7.5-7.5"})))
+
+(def icon-chevron-right
+  ($ :svg.w-6.h-6 {:xmlns "http://www.w3.org/2000/svg" :fill "none" :viewBox "0 0 24 24" :stroke-width "4" :stroke "currentColor"
+                   :width 8 :height 8}
+     ($ :path {:stroke-linecap "round" :stroke-linejoin "round" :d "M8.25 4.5l7.5 7.5-7.5 7.5"})))
+
 (defui tree-view [{:keys [^js node state set-state]}]
   (let [memo? (memo-node? node)
         node (if memo? (.-child node) node)
         el-type (.-elementType node)
         [closed? set-closed] (uix/use-state false)
-        {:keys [hide-dom? selected]} state]
+        {:keys [hide-dom? selected]} state
+        selected? (= selected node)]
     (cond
       (or (nil? el-type)
           (and (string? el-type) hide-dom?))
       (render-children node state set-state)
 
       :else
-      ($ :div
-         {:style {:margin "4px 0 4px 8px"}}
+      ($ :div {:style {:margin "4px 0 4px 8px"}}
+         ($ :span {:style {:margin "0 4px 0 0"
+                           :color "#b78ff1"
+                           :display :inline-block
+                           :transition "transform 100ms ease-in-out"
+                           :transform (if closed? "rotate(-90deg)" "rotate(0deg)")}}
+            icon-chevron-down)
          ($ button
             {:style    {:color      (:highlight-text colors)
-                        :background (when (= selected node) (:highlight-bg colors))}
-             :on-click #(set-state (assoc state :selected node))}
+                        :background (when selected? (:highlight-bg colors))}
+             :on-click #(do (set-state (assoc state :selected node))
+                            (when selected?
+                              (set-closed not)))}
             (node->name node))
          (when-not closed?
            (render-children node state set-state))))))
