@@ -101,7 +101,7 @@
 
 (def icon-arrow-path
   ($ :svg {:xmlns "http://www.w3.org/2000/svg" :fill "none" :viewBox "0 0 24 24" :stroke-width "2" :stroke "currentColor"
-           :width 16 :height 16}
+           :width 14 :height 14}
      ($ :path {:stroke-linecap "round" :stroke-linejoin "round" :d "M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"})))
 
 (def preview-ctx (uix/create-context))
@@ -266,7 +266,7 @@
   (->> (.. node -stateNode -cljsRatom -captured)
        (keep #(when (.-__devtools-label ^js %)
                 [($ data-view {:data (.-__devtools-label ^js %) :style {:margin 0}})
-                 (.-state %)]))))
+                 %]))))
 
 (defn node->reactions [^js node]
   (->> (.. node -stateNode -cljsRatom -captured)
@@ -286,13 +286,13 @@
               :padding    "0 4px"}}
      children))
 
-(defui editable-ref [{:keys [ref set-hint]}]
+(defui editable-ref [{:keys [ref set-hint label type]}]
   (let [[active? set-active] (uix/use-state false)
         value (.-state ref)]
     ($ :div
       {:on-double-click #(set-active true)
        :on-mouse-enter (when-not active?
-                         #(do (set-hint "double click on the value to update the reaction")
+                         #(do (set-hint (str "double click on the value to update the " label))
                               (.stopPropagation %)))
        :on-mouse-leave #(set-hint nil)}
       (if active?
@@ -303,9 +303,13 @@
             :on-blur       #(set-active false)
             :on-key-down (fn [^js e]
                            (when (= (.-key e) "Enter")
+                             (when (= :sub type)
+                               (set! (.-on-set ^js ref) identity))
                              (if (number? value)
                                (reset! ref (js/parseFloat (.. e -target -value) 10))
                                (reset! ref (.. e -target -value)))
+                             (when (= :sub type)
+                               (set! (.-on-set ^js ref) js/undefined))
                              (set-active false)))})
         ($ data-view
            {:data  value
@@ -322,9 +326,18 @@
              (fn [idx [type reaction]]
                ($ :div
                   {:key   idx
-                   :style {:display :flex :gap 8}}
-                  ($ :span type)
-                  ($ editable-ref {:ref reaction :set-hint set-hint})))
+                   :style {:display :flex :justify-content :space-between}}
+                  ($ :div {:style {:display :flex :gap 8}}
+                    ($ :span type)
+                    ($ editable-ref {:ref reaction :set-hint set-hint :label "reaction"}))
+                  #_($ button
+                       {:style {:color "#a769ff"
+                                :margin "0 0 0 8px"}
+                        :on-mouse-enter #(set-hint "restore to initial value")
+                        :on-mouse-leave #(set-hint nil)
+                        :title "restore to initial value"
+                        :on-click #(reset! reaction "INITIAL")}
+                       icon-arrow-path)))
              reactions)))
       (when (seq subs)
         ($ :div {:style {:margin "8px 0 0 0"}}
@@ -333,11 +346,21 @@
              (fn [idx [type sub]]
                ($ :div
                   {:key   idx
-                   :style {:display :flex :gap 8}}
-                  ($ :span type)
-                  ($ data-view
-                     {:data  sub
-                      :style {:margin 0}})))
+                   :style {:display :flex :justify-content :space-between}}
+                  ($ :div {:style {:display :flex :gap 8}}
+                    ($ :span type)
+                    ($ editable-ref {:ref sub :set-hint set-hint :label "subscription" :type :sub}))
+                  #_($ button
+                       {:style {:color "#a769ff"
+                                :margin "0 0 0 8px"}
+                        :on-mouse-enter #(set-hint "restore to initial value")
+                        :on-mouse-leave #(set-hint nil)
+                        :title "restore to initial value"
+                        :on-click #(do
+                                     (set! (.-on-set ^js sub) identity)
+                                     (reset! sub "INITIAL")
+                                     (set! (.-on-set ^js sub) js/undefined))}
+                       icon-arrow-path)))
              subs))))))
 
 (defui hooks-view [{:keys [node]}]
