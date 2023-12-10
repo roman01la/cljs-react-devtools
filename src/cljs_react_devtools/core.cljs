@@ -91,12 +91,13 @@
 
       :else
       ($ :div {:style {:margin "4px 0 4px 8px"}}
-         ($ :span {:style {:margin "0 4px 0 0"
-                           :color "#b78ff1"
-                           :display :inline-block
-                           :transition "transform 100ms ease-in-out"
-                           :transform (if closed? "rotate(-90deg)" "rotate(0deg)")}}
-            icon-chevron-down)
+         (when (.-child node)
+           ($ :span {:style {:margin "0 4px 0 0"
+                             :color "#b78ff1"
+                             :display :inline-block
+                             :transition "transform 100ms ease-in-out"
+                             :transform (if closed? "rotate(-90deg)" "rotate(0deg)")}}
+              icon-chevron-down))
          ($ button
             {:style    {:color      (:highlight-text colors)
                         :background (when selected? (:highlight-bg colors))}
