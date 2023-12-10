@@ -10,8 +10,10 @@ https://github.com/roman01la/cljs-react-devtools/assets/1355501/c3bd8d6d-1127-44
 - React components & DOM nodes tree
 - Visual picking and highlighting
 - Props, hooks, Reagent reactions and re-frame subscriptions inspector
+- Update reactions and subscriptions from the inspector
 - Click on a value in the inspector to log it to the console
 - Press a shortcut to toggle DevTools visibility
+- Bottom, left, right docking and undocking into a separate window
 
 Supported React wrappers:
 - UIx
