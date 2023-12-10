@@ -213,10 +213,8 @@
   (let [el-type (.-elementType node)]
     (cond
       (string? el-type)
-      ($ :pre {:style {:overflow-x :auto :margin 0}}
-         (with-out-str
-           (cljs.pprint/pprint
-             (.. node -memoizedProps))))
+      ($ data-view {:data  (.. node -memoizedProps)
+                    :style {:margin 0}})
 
       (reagent-node? node)
       ($ data-view {:data  (vec (rest (some-> node .-memoizedProps .-argv)))
