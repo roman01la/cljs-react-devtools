@@ -702,6 +702,8 @@
                      :width (.-width rect)
                      :height (.-height rect)
                      :background "#cd80ffa6"
+                     :box-sizing :border-box
+                     :border "1px dashed #da33ff"
                      :pointer-events :none}})))))
 
 (defui devtools* [{:keys [root location]}]
