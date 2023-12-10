@@ -710,8 +710,9 @@
     (js/setTimeout
       (fn []
         (let [node (js/document.createElement "div")
+              shadow-root (.attachShadow node #js {:mode "open"})
               _ (js/document.body.append node)
-              root (uix.dom/create-root node)]
+              root (uix.dom/create-root shadow-root)]
           (uix.dom/render-root ($ devtools opts) root)
           nil))
       100)))
