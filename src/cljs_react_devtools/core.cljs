@@ -560,11 +560,13 @@
                      :pointer-events :none}})))))
 
 (defui devtools* [{:keys [root]}]
-  (let [fiber (uix/use-memo (fn []
+  (let [[tid set-tid] (uix/use-state 0)
+        fiber (uix/use-memo (fn []
                               (when root
+                                tid
                                 (->> (js/Object.keys root)
                                      (some #(when (str/starts-with? % "__reactContainer") (aget root %))))))
-                            [root])
+                            [root tid])
         [state set-state] (uix/use-state {:hide-dom? true
                                           :selected  (when (and root fiber) (.-child fiber))})
         [size set-size] (use-size 35 :cljs-devtools/ui-size)
@@ -575,6 +577,13 @@
                     (fn [fiber]
                       (set-state #(assoc % :selected fiber)))
                     [])]
+    (uix/use-effect
+      (fn []
+        (let [handler (fns/throttle #(set-tid inc) 100)
+              obs (js/MutationObserver. handler)]
+          (.observe obs root #js {:childList true :subtree true :attributes true})
+          #(.disconnect obs)))
+      [root])
     ($ :<>
       (when (or inspecting? preview-node)
         ($ inspector-overlay
