@@ -4,6 +4,8 @@
 
 https://github.com/roman01la/cljs-react-devtools/assets/1355501/c3bd8d6d-1127-4459-89ac-3b551d47da36
 
+[*Live demo*](https://roman01la.github.io/cljs-react-devtools/)
+
 ## Features
 - React components & DOM nodes tree
 - Visual picking and highlighting
