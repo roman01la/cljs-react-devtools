@@ -2,7 +2,11 @@
   (:require [clojure.string :as str]
             [uix.core :as uix :refer [$ defui]]
             [uix.dom]
-            [goog.functions :as fns]))
+            [goog.functions :as fns]
+            [goog.string :as gstr]
+            [goog.async.nextTick]))
+
+(defonce popout-window (atom nil))
 
 (def colors
   {:highlight-text "#8835ff"
@@ -73,6 +77,11 @@
   ($ :svg {:xmlns "http://www.w3.org/2000/svg" :fill "none" :viewBox "0 0 24 24" :stroke-width "2" :stroke "currentColor"
            :width 18 :height 18}
      ($ :path {:stroke-linecap "round" :stroke-linejoin "round" :d "M15.042 21.672L13.684 16.6m0 0l-2.51 2.225.569-9.47 5.227 7.917-3.286-.672zM12 2.25V4.5m5.834.166l-1.591 1.591M20.25 10.5H18M7.757 14.743l-1.59 1.59M6 10.5H3.75m4.007-4.243l-1.59-1.59"})))
+
+(def icon-window
+  ($ :svg {:xmlns "http://www.w3.org/2000/svg" :fill "none" :viewBox "0 0 24 24" :stroke-width "2" :stroke "currentColor"
+           :width 18 :height 18}
+     ($ :path {:stroke-linecap "round" :stroke-linejoin "round" :d "M3 8.25V18a2.25 2.25 0 002.25 2.25h13.5A2.25 2.25 0 0021 18V8.25m-18 0V6a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 6v2.25m-18 0h18M5.25 6h.008v.008H5.25V6zM7.5 6h.008v.008H7.5V6zm2.25 0h.008v.008H9.75V6z"})))
 
 (def icon-arrow-path
   ($ :svg {:xmlns "http://www.w3.org/2000/svg" :fill "none" :viewBox "0 0 24 24" :stroke-width "2" :stroke "currentColor"
@@ -461,7 +470,7 @@
               "report an issue"))
         children))))
 
-(defui toolbar [{:keys [state set-state hint set-inspecting inspecting?]}]
+(defui toolbar [{:keys [state set-state hint set-inspecting inspecting? dock-devtools]}]
   (let [{:keys [hide-dom?]} state]
     ($ :div
        {:style {:padding       "4px 8px"
@@ -485,13 +494,22 @@
                            :opacity (if (str/blank? hint) 0 1)
                            :transition "opacity 100ms ease-in-out"}}
              hint)
+          (when-not @popout-window
+            ($ button
+               {:style {:color "#a769ff"
+                        :background (when inspecting? (:highlight-bg colors))
+                        :margin "0 0 0 8px"}
+                :title "Select element to inspect"
+                :on-click #(set-inspecting not)}
+               icon-cursor-rays))
           ($ button
              {:style {:color "#a769ff"
-                      :background (when inspecting? (:highlight-bg colors))
                       :margin "0 0 0 8px"}
-              :title "Select element to inspect"
-              :on-click #(set-inspecting not)}
-             icon-cursor-rays)))))
+              :title (if @popout-window
+                       "Dock to bottom"
+                       "Undock into separate window")
+              :on-click #(dock-devtools)}
+             icon-window)))))
 
 (defn intersects? [[x y] rect]
   (and (<= (.-x rect) x (+ (.-x rect) (.-width rect)))
@@ -564,6 +582,8 @@
                      :background "#cd80ffa6"
                      :pointer-events :none}})))))
 
+(declare dock-devtools)
+
 (defui devtools* [{:keys [root]}]
   (let [[tid set-tid] (uix/use-state 0)
         fiber (uix/use-memo (fn []
@@ -603,7 +623,9 @@
                   :left       0
                   :bottom     0
                   :width      "100vw"
-                  :height     (str size "vh")
+                  :height     (if @popout-window
+                                "100vh"
+                                (str size "vh"))
                   :background "#fefdff"
                   :color      "#51485f"
                   :font       "normal 14px sans-serif"
@@ -639,7 +661,8 @@
                            :set-state set-state
                            :hint hint
                            :inspecting? inspecting?
-                           :set-inspecting set-inspecting})
+                           :set-inspecting set-inspecting
+                           :dock-devtools dock-devtools})
                        ($ :div {:style {:display    :flex
                                         :flex       1
                                         :max-height "100%"
@@ -701,18 +724,147 @@
                  (set! (.-__devtools-label ^js ret) (first query))
                  ret)))))))
 
+(defonce opts* (atom nil))
+
+(defui devtools-popup [{:keys [on-mount on-unmount]}]
+  (uix/use-effect
+    (fn []
+      (on-mount)
+      #(on-unmount))
+    [on-mount on-unmount])
+  ($ devtools @opts*))
+
+;; https://github.com/day8/re-frame-10x/blob/788bbd8e474c5e61e3cc604d2b01aa2b5a1be75d/src/day8/re_frame_10x/fx/window.cljs
+(defonce window-settings (atom {:width 800 :height 400 :top 0 :left 0}))
+
+(defn m->str [m]
+  (->> m
+       (reduce (fn [ret [k v]]
+                 (let [k (if (keyword? k) (name k) k)
+                       v (if (keyword? v) (name v) v)]
+                   (conj ret (str k "=" v))))
+               [])
+       (str/join ",")))
+
+(defonce devtools-root* (atom nil))
+
+(defn mount [popup-window popup-document]
+  ;; When programming here, we need to be careful about which document and window
+  ;; we are operating on, and keep in mind that the window can close without going
+  ;; through standard react lifecycle, so we hook the beforeunload event.
+  (let [node (.createElement popup-document "div")
+        _ (set! (.-id node) "cljs-react-devtools-root")
+        _ (.append (.-body popup-document) node)
+        shadow-root (.attachShadow node #js {:mode "open"})
+        root (uix.dom/create-root shadow-root)
+        resize-update-scheduled? (atom false)
+        handle-window-resize     (fn [_]
+                                   (when-not @resize-update-scheduled?
+                                     (goog.async.nextTick
+                                       (fn []
+                                         (let [width  (.-innerWidth popup-window)
+                                               height (.-innerHeight popup-window)]
+                                           (swap! window-settings merge {:width width :height height}))
+                                         (reset! resize-update-scheduled? false)))
+                                     (reset! resize-update-scheduled? true)))
+        handle-window-position   (fn []
+                                   ;; Only update re-frame if the windows position has changed.
+                                   (let [{:keys [left top]} @window-settings
+                                         screen-left (.-screenX popup-window)
+                                         screen-top  (.-screenY popup-window)]
+                                     (when (or (not= left screen-left)
+                                               (not= top screen-top))
+                                       (swap! window-settings merge {:left screen-left :top screen-top}))))
+        window-position-interval (atom nil)
+        on-unmount                  (fn [_]
+                                      (.removeEventListener popup-window "resize" handle-window-resize)
+                                      (some-> @window-position-interval js/clearInterval)
+                                      (dock-devtools :unload? true)
+                                      nil)
+        on-mount (fn []
+                   (.addEventListener popup-window "resize" handle-window-resize)
+                   (.addEventListener popup-window "beforeunload" on-unmount)
+                   ;; Check the window position every 2 seconds
+                   (reset! window-position-interval
+                           (js/setInterval
+                             handle-window-position
+                             2000)))]
+    (aset popup-window "onunload" #(reset! popout-window nil))
+    (reset! devtools-root* root)
+    (uix.dom/render-root ($ devtools-popup
+                            {:on-mount on-mount
+                             :on-unmount on-unmount})
+                         root)))
+
+(defn open-debugger-window
+  "Originally copied from re-frisk.devtool/open-debugger-window"
+  [{:keys [width height top left]}]
+  (let [document-title  js/document.title
+        window-title    (gstr/escapeString (str "cljs-react-devtools | " document-title))
+        window-html     (str "<head><title>"
+                             window-title
+                             "</title></head><body style=\"margin: 0px;\"></body>")
+        window-features (m->str
+                          {:width       width
+                           :height      height
+                           :left        left
+                           :top         top
+                           :resizable   :yes
+                           :scrollbars  :yes
+                           :status      :no
+                           :directories :no
+                           :toolbar     :no
+                           :menubar     :no})]
+    ;; We would like to set the windows left and top positions to match the monitor that it was on previously, but Chrome doesn't give us
+    ;; control over this, it will only position it within the same display that it was popped out on.
+    (if-let [w (js/window.open "about:blank" "re-frame-10x-popout" window-features)]
+      (let [d (.-document w)]
+        ;; We had to comment out the following unmountComponentAtNode as it causes a React exception we assume
+        ;; because React says el is not a root container that it knows about.
+        ;; In theory by not freeing up the resources associated with this container (e.g. event handlers) we may be
+        ;; creating memory leaks. However, with observation of the heap in developer tools we cannot see any significant
+        ;; unbounded growth in memory usage.
+        ;(when-let [el (.getElementById d "--re-frame-10x--")]
+        ;  (r/unmount-component-at-node el)))
+        (.open d)
+        (.write d window-html)
+        (aset w "onload" (partial mount w d))
+        (.close d)
+        (reset! popout-window w)))))
+
+(declare render-devtools)
+
+(defn dock-devtools [& {:keys [unload?]}]
+  (if @popout-window
+    (do
+      (reset! devtools-root* nil)
+      (when-not unload?
+        (.close @popout-window))
+      (js/setTimeout #(render-devtools) 50))
+    (do
+      (.unmount @devtools-root*)
+      (reset! devtools-root* nil)
+      (.remove (js/document.getElementById "cljs-react-devtools-root"))
+      (open-debugger-window @window-settings))))
+
+(defn render-devtools []
+  (let [node (js/document.createElement "div")
+        shadow-root (.attachShadow node #js {:mode "open"})
+        _ (js/document.body.append node)
+        _ (set! (.-id node) "cljs-react-devtools-root")
+        root (uix.dom/create-root shadow-root)]
+    (reset! devtools-root* root)
+    (uix.dom/render-root ($ devtools @opts*) root)
+    nil))
+
 (defonce ^:private initialized? (atom false))
 
 (defn init! [{:keys [root shortcut] :as opts}]
   (when-not @initialized?
     (reset! initialized? true)
+    (reset! opts* opts)
     (hijack-re-frame)
     (js/setTimeout
       (fn []
-        (let [node (js/document.createElement "div")
-              shadow-root (.attachShadow node #js {:mode "open"})
-              _ (js/document.body.append node)
-              root (uix.dom/create-root shadow-root)]
-          (uix.dom/render-root ($ devtools opts) root)
-          nil))
+        (render-devtools))
       100)))
