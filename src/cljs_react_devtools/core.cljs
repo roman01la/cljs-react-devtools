@@ -74,6 +74,11 @@
            :width 18 :height 18}
      ($ :path {:stroke-linecap "round" :stroke-linejoin "round" :d "M15.042 21.672L13.684 16.6m0 0l-2.51 2.225.569-9.47 5.227 7.917-3.286-.672zM12 2.25V4.5m5.834.166l-1.591 1.591M20.25 10.5H18M7.757 14.743l-1.59 1.59M6 10.5H3.75m4.007-4.243l-1.59-1.59"})))
 
+(def icon-arrow-path
+  ($ :svg {:xmlns "http://www.w3.org/2000/svg" :fill "none" :viewBox "0 0 24 24" :stroke-width "2" :stroke "currentColor"
+           :width 16 :height 16}
+     ($ :path {:stroke-linecap "round" :stroke-linejoin "round" :d "M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"})))
+
 (def preview-ctx (uix/create-context))
 
 (defui tree-view [{:keys [^js node state set-state]}]
