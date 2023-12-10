@@ -688,17 +688,18 @@
       ($ devtools* props))))
 
 (defn hijack-re-frame []
-  (when-let [subscribe js/re-frame.core.subscribe]
-    (set! js/re-frame.core.subscribe
-          (fn
-            ([query]
-             (let [ret (subscribe query)]
-               (set! (.-__devtools-label ^js ret) (first query))
-               ret))
-            ([query dynv]
-             (let [ret (subscribe query dynv)]
-               (set! (.-__devtools-label ^js ret) (first query))
-               ret))))))
+  (when (exists? js/re-frame.core.subscribe)
+    (let [subscribe js/re-frame.core.subscribe]
+      (set! js/re-frame.core.subscribe
+            (fn
+              ([query]
+               (let [ret (subscribe query)]
+                 (set! (.-__devtools-label ^js ret) (first query))
+                 ret))
+              ([query dynv]
+               (let [ret (subscribe query dynv)]
+                 (set! (.-__devtools-label ^js ret) (first query))
+                 ret)))))))
 
 (defonce ^:private initialized? (atom false))
 
