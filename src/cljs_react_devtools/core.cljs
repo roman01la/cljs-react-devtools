@@ -271,7 +271,7 @@
 (defn node->reactions [^js node]
   (->> (.. node -stateNode -cljsRatom -captured)
        (keep #(when (.. ^js % -state -generation)
-                ["ratom" (.-state (aget (.-state %) 0))]))))
+                ["ratom" (aget (.-state %) 0)]))))
 
 (defn camel-case->kebab-case [s]
   (->> (str/split s #"(?<=[a-z])(?=[A-Z])")
@@ -286,12 +286,37 @@
               :padding    "0 4px"}}
      children))
 
-(defui reactions-view [{:keys [node]}]
+(defui editable-ref [{:keys [ref set-hint]}]
+  (let [[active? set-active] (uix/use-state false)
+        value (.-state ref)]
+    ($ :div
+      {:on-double-click #(set-active true)
+       :on-mouse-enter (when-not active?
+                         #(do (set-hint "double click on the value to update the reaction")
+                              (.stopPropagation %)))
+       :on-mouse-leave #(set-hint nil)}
+      (if active?
+        ($ :input
+           {:default-value value
+            :type (if (number? value) :number :text)
+            :auto-focus true
+            :on-blur       #(set-active false)
+            :on-key-down (fn [^js e]
+                           (when (= (.-key e) "Enter")
+                             (if (number? value)
+                               (reset! ref (js/parseFloat (.. e -target -value) 10))
+                               (reset! ref (.. e -target -value)))
+                             (set-active false)))})
+        ($ data-view
+           {:data  value
+            :style {:margin 0}})))))
+
+(defui reactions-view [{:keys [node set-hint]}]
   (let [reactions (node->reactions node)
         subs (node->rf-subs node)]
     ($ :<>
-      (when (seq reactions)
-        ($ :div {:style {:margin "8px 0 0 0"}}
+       (when (seq reactions)
+         ($ :div {:style {:margin "8px 0 0 0"}}
            ($ section-header "reactions")
            (map-indexed
              (fn [idx [type reaction]]
@@ -299,9 +324,7 @@
                   {:key   idx
                    :style {:display :flex :gap 8}}
                   ($ :span type)
-                  ($ data-view
-                     {:data  reaction
-                      :style {:margin 0}})))
+                  ($ editable-ref {:ref reaction :set-hint set-hint})))
              reactions)))
       (when (seq subs)
         ($ :div {:style {:margin "8px 0 0 0"}}
@@ -462,7 +485,7 @@
                  ($ section-header "props")
                  (node->props selected)
                  (when (reagent-node? selected)
-                   ($ reactions-view {:node selected}))
+                   ($ reactions-view {:node selected :set-hint set-hint}))
                  ($ hooks-view {:node selected}))))))))
 
 (def error-boundary
