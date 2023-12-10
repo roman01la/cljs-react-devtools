@@ -74,13 +74,16 @@
            :width 18 :height 18}
      ($ :path {:stroke-linecap "round" :stroke-linejoin "round" :d "M15.042 21.672L13.684 16.6m0 0l-2.51 2.225.569-9.47 5.227 7.917-3.286-.672zM12 2.25V4.5m5.834.166l-1.591 1.591M20.25 10.5H18M7.757 14.743l-1.59 1.59M6 10.5H3.75m4.007-4.243l-1.59-1.59"})))
 
+(def preview-ctx (uix/create-context))
+
 (defui tree-view [{:keys [^js node state set-state]}]
   (let [memo? (memo-node? node)
         node (if memo? (.-child node) node)
         el-type (.-elementType node)
         [closed? set-closed] (uix/use-state false)
         {:keys [hide-dom? selected]} state
-        selected? (= selected node)]
+        selected? (= selected node)
+        set-preview-node (uix/use-context preview-ctx)]
     (cond
       (or (nil? el-type)
           (and (string? el-type) hide-dom?))
@@ -97,6 +100,8 @@
          ($ button
             {:style    {:color      (:highlight-text colors)
                         :background (when selected? (:highlight-bg colors))}
+             :on-mouse-enter #(set-preview-node node)
+             :on-mouse-leave #(set-preview-node nil)
              :on-click #(do (set-state (assoc state :selected node))
                             (when selected?
                               (set-closed not)))}
@@ -470,14 +475,16 @@
           ($ :label
              {:for "cljs-devtools_hide-mo-nodes"}
              "Hide DOM nodes"))
-       ($ :div {:style {:display :flex}}
+       ($ :div {:style {:display :flex
+                        :align-items :center}}
           ($ :div {:style {:color "#a769ff"
                            :opacity (if (str/blank? hint) 0 1)
                            :transition "opacity 100ms ease-in-out"}}
              hint)
           ($ button
              {:style {:color "#a769ff"
-                      :background (when inspecting? (:highlight-bg colors))}
+                      :background (when inspecting? (:highlight-bg colors))
+                      :margin "0 0 0 8px"}
               :title "Select element to inspect"
               :on-click #(set-inspecting not)}
              icon-cursor-rays)))))
@@ -486,7 +493,7 @@
   (and (<= (.-x rect) x (+ (.-x rect) (.-width rect)))
        (<= (.-y rect) y (+ (.-y rect) (.-height rect)))))
 
-(uix/defhook use-dom-inspector [{:keys [root set-inspecting on-target skip-dom?]}]
+(uix/defhook use-dom-inspector [{:keys [root set-inspecting on-target skip-dom? preview-node]}]
   (let [[rect set-rect] (uix/use-state nil)
         nodes (uix/use-memo
                 (fn []
@@ -496,32 +503,43 @@
                 [root])]
     (uix/use-effect
       (fn []
-        (let [node! (atom nil)
-              mouse-handler (fn [^js e]
-                              (let [x (.-x e)
-                                    y (.-y e)]
-                                (when-let [node (some #(when (intersects? [x y] (.getBoundingClientRect %)) %)
-                                                      nodes)]
-                                  (reset! node! node)
-                                  (set-rect (.getBoundingClientRect node)))))
-              click-handler (fn []
-                              (when-let [node @node!]
-                                (when-let [target (->> (js/Object.keys node)
-                                                       (some #(when (str/starts-with? % "__reactFiber")
-                                                                (if skip-dom?
-                                                                  (.-_debugOwner (aget node %))
-                                                                  (aget node %)))))]
-                                  (on-target target)
-                                  (set-inspecting false))))]
-          (.addEventListener js/document "mousemove" mouse-handler)
-          (.addEventListener js/document "click" click-handler)
-          (fn []
-            (.removeEventListener js/document "mousemove" mouse-handler)
-            (.removeEventListener js/document "click" click-handler))))
-      [root nodes on-target set-inspecting skip-dom?])
+        (if preview-node
+          (let [nodes (tree-seq #(some? (.-child %)) #(node->siblings (.-child %))
+                                preview-node)]
+            (when-let [node (some #(when (.-stateNode %) %) nodes)]
+              (let [dom-node (.-stateNode node)
+                    rect (if (.-getBoundingClientRect dom-node)
+                           ;; DOM node
+                           (.getBoundingClientRect dom-node)
+                           ;; class component
+                           (.getBoundingClientRect (uix.dom/find-dom-node dom-node)))]
+                (set-rect rect))))
+          (let [node! (atom nil)
+                mouse-handler (fn [^js e]
+                                (let [x (.-x e)
+                                      y (.-y e)]
+                                  (when-let [node (some #(when (intersects? [x y] (.getBoundingClientRect %)) %)
+                                                        nodes)]
+                                    (reset! node! node)
+                                    (set-rect (.getBoundingClientRect node)))))
+                click-handler (fn []
+                                (when-let [node @node!]
+                                  (when-let [target (->> (js/Object.keys node)
+                                                         (some #(when (str/starts-with? % "__reactFiber")
+                                                                  (if skip-dom?
+                                                                    (.-_debugOwner (aget node %))
+                                                                    (aget node %)))))]
+                                    (on-target target)
+                                    (set-inspecting false))))]
+            (.addEventListener js/document "mousemove" mouse-handler)
+            (.addEventListener js/document "click" click-handler)
+            (fn []
+              (.removeEventListener js/document "mousemove" mouse-handler)
+              (.removeEventListener js/document "click" click-handler)))))
+      [root nodes on-target set-inspecting skip-dom? preview-node])
     rect))
 
-(defui inspector-overlay [{:keys [set-inspecting root on-target skip-dom?] :as props}]
+(defui inspector-overlay [{:keys [set-inspecting root on-target skip-dom? preview-node] :as props}]
   (let [rect (use-dom-inspector props)]
     ($ :div
        {:style {:z-index 9998
@@ -553,17 +571,19 @@
         [size set-size] (use-size 35 :cljs-devtools/ui-size)
         [hint set-hint] (uix/use-state "")
         [inspecting? set-inspecting] (uix/use-state false)
+        [preview-node set-preview-node] (uix/use-state false)
         on-target (uix/use-callback
                     (fn [fiber]
                       (set-state #(assoc % :selected fiber)))
                     [])]
     ($ :<>
-      (when inspecting?
+      (when (or inspecting? preview-node)
         ($ inspector-overlay
            {:set-inspecting set-inspecting
             :root root
             :on-target on-target
-            :skip-dom? (:hide-dom? state)}))
+            :skip-dom? (:hide-dom? state)
+            :preview-node preview-node}))
       ($ :div
          {:style {:position   :fixed
                   :z-index    9999
@@ -615,11 +635,12 @@
                                            :overflow-y :auto
                                            :padding    "8px 0"
                                            :background "#fbfafd"}}
-                             (for [node (node->siblings (.-child fiber))]
-                               ($ tree-view {:node      node
-                                             :state     state
-                                             :set-state set-state
-                                             :key       (.-index node)})))
+                             ($ (.-Provider preview-ctx) {:value set-preview-node}
+                               (for [node (node->siblings (.-child fiber))]
+                                 ($ tree-view {:node      node
+                                               :state     state
+                                               :set-state set-state
+                                               :key       (.-index node)}))))
                           ($ inspector {:state     state
                                         :set-state set-state
                                         :set-hint set-hint})))))))))
