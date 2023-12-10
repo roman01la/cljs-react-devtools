@@ -2,7 +2,7 @@
 
 > ⚠️ _EXPERIMENTAL_
 
-https://github.com/roman01la/cljs-react-devtools/assets/1355501/5f41198c-c0f5-409a-bb4d-3fd6cc4c375d
+https://github.com/roman01la/cljs-react-devtools/assets/1355501/c3bd8d6d-1127-4459-89ac-3b551d47da36
 
 ## Features
 - React component tree
