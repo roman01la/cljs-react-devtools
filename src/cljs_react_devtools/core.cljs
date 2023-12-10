@@ -69,10 +69,10 @@
            :width 8 :height 8}
      ($ :path {:stroke-linecap "round" :stroke-linejoin "round" :d "M19.5 8.25l-7.5 7.5-7.5-7.5"})))
 
-(def icon-chevron-right
-  ($ :svg.w-6.h-6 {:xmlns "http://www.w3.org/2000/svg" :fill "none" :viewBox "0 0 24 24" :stroke-width "4" :stroke "currentColor"
-                   :width 8 :height 8}
-     ($ :path {:stroke-linecap "round" :stroke-linejoin "round" :d "M8.25 4.5l7.5 7.5-7.5 7.5"})))
+(def icon-cursor-rays
+  ($ :svg {:xmlns "http://www.w3.org/2000/svg" :fill "none" :viewBox "0 0 24 24" :stroke-width "2" :stroke "currentColor"
+           :width 18 :height 18}
+     ($ :path {:stroke-linecap "round" :stroke-linejoin "round" :d "M15.042 21.672L13.684 16.6m0 0l-2.51 2.225.569-9.47 5.227 7.917-3.286-.672zM12 2.25V4.5m5.834.166l-1.591 1.591M20.25 10.5H18M7.757 14.743l-1.59 1.59M6 10.5H3.75m4.007-4.243l-1.59-1.59"})))
 
 (defui tree-view [{:keys [^js node state set-state]}]
   (let [memo? (memo-node? node)
@@ -452,7 +452,7 @@
               "report an issue"))
         children))))
 
-(defui toolbar [{:keys [state set-state hint]}]
+(defui toolbar [{:keys [state set-state hint set-inspecting inspecting?]}]
   (let [{:keys [hide-dom?]} state]
     ($ :div
        {:style {:padding       "4px 8px"
@@ -470,10 +470,77 @@
           ($ :label
              {:for "cljs-devtools_hide-mo-nodes"}
              "Hide DOM nodes"))
-       ($ :div {:style {:color "#a769ff"
-                        :opacity (if (str/blank? hint) 0 1)
-                        :transition "opacity 100ms ease-in-out"}}
-          hint))))
+       ($ :div {:style {:display :flex}}
+          ($ :div {:style {:color "#a769ff"
+                           :opacity (if (str/blank? hint) 0 1)
+                           :transition "opacity 100ms ease-in-out"}}
+             hint)
+          ($ button
+             {:style {:color "#a769ff"
+                      :background (when inspecting? (:highlight-bg colors))}
+              :title "Select element to inspect"
+              :on-click #(set-inspecting not)}
+             icon-cursor-rays)))))
+
+(defn intersects? [[x y] rect]
+  (and (<= (.-x rect) x (+ (.-x rect) (.-width rect)))
+       (<= (.-y rect) y (+ (.-y rect) (.-height rect)))))
+
+(uix/defhook use-dom-inspector [{:keys [root set-inspecting on-target skip-dom?]}]
+  (let [[rect set-rect] (uix/use-state nil)
+        nodes (uix/use-memo
+                (fn []
+                  (->> root
+                       (tree-seq #(some? (.-children %)) #(seq (.-children %)))
+                       (reverse)))
+                [root])]
+    (uix/use-effect
+      (fn []
+        (let [node! (atom nil)
+              mouse-handler (fn [^js e]
+                              (let [x (.-x e)
+                                    y (.-y e)]
+                                (when-let [node (some #(when (intersects? [x y] (.getBoundingClientRect %)) %)
+                                                      nodes)]
+                                  (reset! node! node)
+                                  (set-rect (.getBoundingClientRect node)))))
+              click-handler (fn []
+                              (when-let [node @node!]
+                                (when-let [target (->> (js/Object.keys node)
+                                                       (some #(when (str/starts-with? % "__reactFiber")
+                                                                (if skip-dom?
+                                                                  (.-_debugOwner (aget node %))
+                                                                  (aget node %)))))]
+                                  (on-target target)
+                                  (set-inspecting false))))]
+          (.addEventListener js/document "mousemove" mouse-handler)
+          (.addEventListener js/document "click" click-handler)
+          (fn []
+            (.removeEventListener js/document "mousemove" mouse-handler)
+            (.removeEventListener js/document "click" click-handler))))
+      [root nodes on-target set-inspecting skip-dom?])
+    rect))
+
+(defui inspector-overlay [{:keys [set-inspecting root on-target skip-dom?] :as props}]
+  (let [rect (use-dom-inspector props)]
+    ($ :div
+       {:style {:z-index 9998
+                :position :fixed
+                :width "100vw"
+                :height "100vh"
+                :top 0
+                :left 0
+                :background "#e7c2ff1a"
+                :on-click #(.stopPropagation %)}}
+       (when rect
+         ($ :div
+            {:style {:position :absolute
+                     :top  (.-y rect)
+                     :left (.-x rect)
+                     :width (.-width rect)
+                     :height (.-height rect)
+                     :background "#cd80ffa6"
+                     :pointer-events :none}})))))
 
 (defui devtools* [{:keys [root]}]
   (let [fiber (uix/use-memo (fn []
@@ -484,64 +551,78 @@
         [state set-state] (uix/use-state {:hide-dom? true
                                           :selected  (when (and root fiber) (.-child fiber))})
         [size set-size] (use-size 35 :cljs-devtools/ui-size)
-        [hint set-hint] (uix/use-state "")]
-    ($ :div
-       {:style {:position   :fixed
-                :z-index    9999
-                :left       0
-                :bottom     0
-                :width      "100vw"
-                :height     (str size "vh")
-                :background "#fefdff"
-                :color      "#51485f"
-                :font       "normal 14px sans-serif"
-                :display    :flex
-                :border-top "2px solid #8632ff75"}}
-       ($ resize-handle {:set-size set-size :dir :vertical :min 10 :max 90})
-       (cond
-         (or (not root) (not fiber))
-         ($ :div
-            {:style {:display         :flex
-                     :flex-direction  :column
-                     :gap             8
-                     :flex            1
-                     :justify-content :center
-                     :align-items     :center
-                     :color           (:highlight-text colors)
-                     :font-size       "18px"}}
-            (if-not root
-              ($ :<>
-                "Devtools are not connected to React root"
-                ($ :span {:style {:font-size "16px"}}
-                   "make sure to pass the root node when initializing devtools")
-                ($ :pre {:style {:font-size "14px" :margin 0}}
-                   (pr-str
-                     '(cljs-react-devtools.core/init!
-                        {:root (js/document.getElementById "root")}))))
-              "Provided root node doesn't have React app rendered"))
+        [hint set-hint] (uix/use-state "")
+        [inspecting? set-inspecting] (uix/use-state false)
+        on-target (uix/use-callback
+                    (fn [fiber]
+                      (set-state #(assoc % :selected fiber)))
+                    [])]
+    ($ :<>
+      (when inspecting?
+        ($ inspector-overlay
+           {:set-inspecting set-inspecting
+            :root root
+            :on-target on-target
+            :skip-dom? (:hide-dom? state)}))
+      ($ :div
+         {:style {:position   :fixed
+                  :z-index    9999
+                  :left       0
+                  :bottom     0
+                  :width      "100vw"
+                  :height     (str size "vh")
+                  :background "#fefdff"
+                  :color      "#51485f"
+                  :font       "normal 14px sans-serif"
+                  :display    :flex
+                  :border-top "2px solid #8632ff75"}}
+         ($ resize-handle {:set-size set-size :dir :vertical :min 10 :max 90})
+         (cond
+           (or (not root) (not fiber))
+           ($ :div
+              {:style {:display         :flex
+                       :flex-direction  :column
+                       :gap             8
+                       :flex            1
+                       :justify-content :center
+                       :align-items     :center
+                       :color           (:highlight-text colors)
+                       :font-size       "18px"}}
+              (if-not root
+                ($ :<>
+                  "Devtools are not connected to React root"
+                  ($ :span {:style {:font-size "16px"}}
+                     "make sure to pass the root node when initializing devtools")
+                  ($ :pre {:style {:font-size "14px" :margin 0}}
+                     (pr-str
+                       '(cljs-react-devtools.core/init!
+                          {:root (js/document.getElementById "root")}))))
+                "Provided root node doesn't have React app rendered"))
 
-         :else ($ error-boundary
-                  ($ :div {:style {:flex 1}}
-                     ($ toolbar
-                        {:state     state
-                         :set-state set-state
-                         :hint hint})
-                     ($ :div {:style {:display    :flex
-                                      :flex       1
-                                      :max-height "100%"
-                                      :min-height "100%"}}
-                        ($ :div {:style {:flex       1
-                                         :overflow-y :auto
-                                         :padding    "8px 0"
-                                         :background "#fbfafd"}}
-                           (for [node (node->siblings (.-child fiber))]
-                             ($ tree-view {:node      node
-                                           :state     state
-                                           :set-state set-state
-                                           :key       (.-index node)})))
-                        ($ inspector {:state     state
-                                      :set-state set-state
-                                      :set-hint set-hint}))))))))
+           :else ($ error-boundary
+                    ($ :div {:style {:flex 1}}
+                       ($ toolbar
+                          {:state     state
+                           :set-state set-state
+                           :hint hint
+                           :inspecting? inspecting?
+                           :set-inspecting set-inspecting})
+                       ($ :div {:style {:display    :flex
+                                        :flex       1
+                                        :max-height "100%"
+                                        :min-height "100%"}}
+                          ($ :div {:style {:flex       1
+                                           :overflow-y :auto
+                                           :padding    "8px 0"
+                                           :background "#fbfafd"}}
+                             (for [node (node->siblings (.-child fiber))]
+                               ($ tree-view {:node      node
+                                             :state     state
+                                             :set-state set-state
+                                             :key       (.-index node)})))
+                          ($ inspector {:state     state
+                                        :set-state set-state
+                                        :set-hint set-hint})))))))))
 
 (defui devtools [{:keys [shortcut] :as props}]
   (let [[visible? set-visible] (uix/use-state #(let [v (js/JSON.parse (js/localStorage.getItem ":cljs-devtools/visible?"))]
