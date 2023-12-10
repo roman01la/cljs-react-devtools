@@ -511,7 +511,9 @@
       (.close @popout-window))
     (dock-devtools :location location)))
 
-(defui toolbar [{:keys [state set-state hint set-inspecting inspecting? dock-devtools location]}]
+(defui toolbar
+  [{:keys [state set-state hint set-hint
+           set-inspecting inspecting? dock-devtools location]}]
   (let [{:keys [hide-dom?]} state]
     ($ :div
        {:style {:padding       "4px 8px"
@@ -521,6 +523,8 @@
                 :justify-content :space-between
                 :gap 32}}
        ($ :div
+          {:on-mouse-enter #(set-hint "toggle DOM nodes in the tree view")
+           :on-mouse-leave #(set-hint nil)}
           ($ :input#cljs-devtools_hide-mo-nodes
              {:type      :checkbox
               :checked   hide-dom?
@@ -539,19 +543,25 @@
              {:style {:color "#a769ff"
                       :background (when inspecting? (:highlight-bg colors))
                       :margin "0 0 0 8px"}
-              :title "Select element to inspect"
+              :on-mouse-enter #(set-hint "select an element to inspect")
+              :on-mouse-leave #(set-hint nil)
+              :title "Select an element to inspect"
               :on-click #(set-inspecting not)}
              icon-cursor-rays)
           (when (not= :window location)
             ($ button
                {:style {:color "#a769ff"
                         :margin "0 0 0 8px"}
+                :on-mouse-enter #(set-hint "undock into separate window")
+                :on-mouse-leave #(set-hint nil)
                 :title "Undock into separate window"
                 :on-click #(dock-devtools :location :window)}
                icon-window))
           ($ button
              {:style {:color "#a769ff"
                       :margin "0 0 0 8px"}
+              :on-mouse-enter #(set-hint "dock to bottom")
+              :on-mouse-leave #(set-hint nil)
               :title "Dock to bottom"
               :disabled (= location :bottom)
               :on-click #(close-window :bottom)}
@@ -559,6 +569,8 @@
           ($ button
              {:style {:color "#a769ff"
                       :margin "0 0 0 8px"}
+              :on-mouse-enter #(set-hint "dock to the left")
+              :on-mouse-leave #(set-hint nil)
               :title "Dock to the left"
               :disabled (= location :left)
               :on-click #(close-window :left)}
@@ -566,6 +578,8 @@
           ($ button
              {:style {:color "#a769ff"
                       :margin "0 0 0 8px"}
+              :on-mouse-enter #(set-hint "dock to the right")
+              :on-mouse-leave #(set-hint nil)
               :title "Dock to the right"
               :disabled (= location :right)
               :on-click #(close-window :right)}
@@ -739,6 +753,7 @@
                           {:state     state
                            :set-state set-state
                            :hint (when (#{:bottom :window} location) hint)
+                           :set-hint set-hint
                            :inspecting? inspecting?
                            :set-inspecting set-inspecting
                            :dock-devtools dock-devtools
