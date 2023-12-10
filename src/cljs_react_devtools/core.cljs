@@ -691,13 +691,14 @@
            (when (seq shortcut)
              (let [down-handler (fn [^js e]
                                   (when
-                                    (->> shortcut
-                                         (every? #(case %
-                                                    "Control" (.-ctrlKey e)
-                                                    "Alt" (.-altKey e)
-                                                    "Meta" (.-metaKey e)
-                                                    "Shift" (.-shiftKey e)
-                                                    (= % (.-key e)))))
+                                    (and (not @popout-window)
+                                         (->> shortcut
+                                              (every? #(case %
+                                                         "Control" (.-ctrlKey e)
+                                                         "Alt" (.-altKey e)
+                                                         "Meta" (.-metaKey e)
+                                                         "Shift" (.-shiftKey e)
+                                                         (= % (.-key e))))))
                                     (set-visible not)))]
                (.addEventListener js/window "keydown" down-handler)
                (fn []
