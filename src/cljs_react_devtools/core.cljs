@@ -535,15 +535,14 @@
                            :opacity (if (str/blank? hint) 0 1)
                            :transition "opacity 100ms ease-in-out"}}
              hint)
-          (when-not @popout-window
-            ($ button
-               {:style {:color "#a769ff"
-                        :background (when inspecting? (:highlight-bg colors))
-                        :margin "0 0 0 8px"}
-                :title "Select element to inspect"
-                :on-click #(set-inspecting not)}
-               icon-cursor-rays))
-          (when-not @popout-window
+          ($ button
+             {:style {:color "#a769ff"
+                      :background (when inspecting? (:highlight-bg colors))
+                      :margin "0 0 0 8px"}
+              :title "Select element to inspect"
+              :on-click #(set-inspecting not)}
+             icon-cursor-rays)
+          (when (not= :window location)
             ($ button
                {:style {:color "#a769ff"
                         :margin "0 0 0 8px"}
@@ -613,7 +612,9 @@
                                                                     (.-_debugOwner (aget node %))
                                                                     (aget node %)))))]
                                     (on-target target)
-                                    (set-inspecting false))))]
+                                    (set-inspecting false)
+                                    (when-let [w @popout-window]
+                                      (.focus w)))))]
             (.addEventListener js/document "mousemove" mouse-handler)
             (.addEventListener js/document "click" click-handler)
             (fn []
@@ -670,12 +671,14 @@
       [root])
     ($ :<>
       (when (or inspecting? preview-node)
-        ($ inspector-overlay
-           {:set-inspecting set-inspecting
-            :root root
-            :on-target on-target
-            :skip-dom? (:hide-dom? state)
-            :preview-node preview-node}))
+        (uix.dom/create-portal
+          ($ inspector-overlay
+             {:set-inspecting set-inspecting
+              :root root
+              :on-target on-target
+              :skip-dom? (:hide-dom? state)
+              :preview-node preview-node})
+          (js/document.getElementById "cljs-devtools-inspector-overlay")))
       ($ :div
          {:style {:position   :fixed
                   :z-index    9999
@@ -761,7 +764,7 @@
                               :set-hint set-hint
                               :location location})))))))))
 
-(defui devtools [{:keys [shortcut] :as props}]
+(defui devtools [{:keys [shortcut location] :as props}]
   (let [[visible? set-visible] (uix/use-state #(let [v (js/JSON.parse (js/localStorage.getItem ":cljs-devtools/visible?"))]
                                                  (or (nil? v) v)))]
     (uix/use-effect
@@ -771,7 +774,7 @@
            (when (seq shortcut)
              (let [down-handler (fn [^js e]
                                   (when
-                                    (and (not @popout-window)
+                                    (and (not= :window location)
                                          (->> shortcut
                                               (every? #(case %
                                                          "Control" (.-ctrlKey e)
@@ -783,7 +786,7 @@
                (.addEventListener js/window "keydown" down-handler)
                (fn []
                  (.removeEventListener js/window "keydown" down-handler)))))))
-     [shortcut])
+     [shortcut location])
     (uix/use-effect
       (fn []
         (js/localStorage.setItem ":cljs-devtools/visible?" visible?))
@@ -950,5 +953,8 @@
     (hijack-re-frame)
     (js/setTimeout
       (fn []
-        (render-devtools {:location (:location @window-settings)}))
+        (let [node (js/document.createElement "div")]
+          (set! (.-id node) "cljs-devtools-inspector-overlay")
+          (js/document.body.append node)
+          (render-devtools {:location (:location @window-settings)})))
       100)))
