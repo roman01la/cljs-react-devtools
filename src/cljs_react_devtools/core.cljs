@@ -8,9 +8,33 @@
 
 (defonce popout-window (atom nil))
 
-(def colors
-  {:highlight-text "#8835ff"
-   :highlight-bg   "#eadcff"})
+(def theme (uix/create-context))
+
+(def color-themes
+  {:light
+   {:highlight-text "#8835ff"
+    :highlight-bg   "#eadcff"
+    :icon-chevron "#b78ff1"
+    :data-view-primitive "#216aef"
+    :data-view-string "#388e28"
+    :data-view-keyword "#c94d22"
+    :resize-handle "#fcf8ff"
+    :tool-bar-text "#a769ff"
+    :devtools-bg "#fefdff"
+    :devtools-text "#51485f"
+    :tree-view-bg "#fbfafd"}
+   :dark
+   {:highlight-text "#ebe0fb"
+    :highlight-bg   "#4d27f9"
+    :icon-chevron "#ede2fd"
+    :data-view-primitive "#7be0ff"
+    :data-view-string "#5de144"
+    :data-view-keyword "#fac543"
+    :resize-handle "#3e2e44"
+    :tool-bar-text "#ebe0fc"
+    :devtools-bg "#302b32"
+    :devtools-text "#ede2ff"
+    :tree-view-bg "#2d292d"}})
 
 (defn node->siblings [^js node]
   (lazy-seq
@@ -113,7 +137,8 @@
         [closed? set-closed] (uix/use-state false)
         {:keys [hide-dom? selected]} state
         selected? (= selected node)
-        set-preview-node (uix/use-context preview-ctx)]
+        set-preview-node (uix/use-context preview-ctx)
+        colors (uix/use-context theme)]
     (cond
       (or (nil? el-type)
           (and (string? el-type) hide-dom?))
@@ -123,7 +148,7 @@
       ($ :div {:style {:margin "4px 0 4px 8px"}}
          (when (.-child node)
            ($ :span {:style {:margin "0 4px 0 0"
-                             :color "#b78ff1"
+                             :color (:icon-chevron colors)
                              :display :inline-block
                              :transition "transform 100ms ease-in-out"
                              :transform (if closed? "rotate(-90deg)" "rotate(0deg)")}}
@@ -205,7 +230,8 @@
 
 (defui data-view
   [{:keys [data style key?]}]
-  (let [set-active (uix/use-context hint-ctx)]
+  (let [set-active (uix/use-context hint-ctx)
+        colors (uix/use-context theme)]
     ($ :pre
        {:style    (merge {:margin "0 0 0 8px"
                           :cursor      :pointer
@@ -220,18 +246,18 @@
          (map? data) ($ data-view-map {:data data})
          (vector? data) ($ data-view-seq {:data data :brackets ["[" "]"]})
          (set? data) ($ data-view-seq {:data data :brackets ["#{" "}"]})
-         (number? data) ($ :span {:style {:color "#216aef"}} (pr-str data))
-         (nil? data) ($ :span {:style {:color "#216aef"}} (pr-str data))
-         (boolean? data) ($ :span {:style {:color "#216aef"}} (pr-str data))
-         (string? data) ($ :span {:style {:color "#388e28"}} (pr-str data))
-         (keyword? data) ($ :span {:style {:color     "#c94d22"
+         (number? data) ($ :span {:style {:color (:data-view-primitive colors)}} (pr-str data))
+         (nil? data) ($ :span {:style {:color (:data-view-primitive colors)}} (pr-str data))
+         (boolean? data) ($ :span {:style {:color (:data-view-primitive colors)}} (pr-str data))
+         (string? data) ($ :span {:style {:color (:data-view-string colors)}} (pr-str data))
+         (keyword? data) ($ :span {:style {:color     (:data-view-keyword colors)
                                            :text-wrap :nowrap}}
                             (pr-str data))
-         (fn? data) ($ :span {:style {:color "#216aef"}} (str "fn<"
-                                                              (if (str/blank? (.-name data))
-                                                                "anonymous"
-                                                                (.-name data))
-                                                              ">"))
+         (fn? data) ($ :span {:style {:color (:data-view-primitive colors)}} (str "fn<"
+                                                                                  (if (str/blank? (.-name data))
+                                                                                    "anonymous"
+                                                                                    (.-name data))
+                                                                                  ">"))
          (= js/Object (.-constructor data)) ($ data-view-map
                                                {:data       data
                                                 :tag        "js"
@@ -279,12 +305,13 @@
        (str/join "-")))
 
 (defui section-header [{:keys [children]}]
-  ($ :div
-     {:style {:color      (:highlight-text colors)
-              :background (:highlight-bg colors)
-              :margin     "0 0 4px 0"
-              :padding    "0 4px"}}
-     children))
+  (let [colors (uix/use-context theme)]
+    ($ :div
+       {:style {:color      (:highlight-text colors)
+                :background (:highlight-bg colors)
+                :margin     "0 0 4px 0"
+                :padding    "0 4px"}}
+       children)))
 
 (defui editable-ref [{:keys [ref set-hint label type]}]
   (let [[active? set-active] (uix/use-state false)
@@ -331,7 +358,7 @@
                     ($ :span type)
                     ($ editable-ref {:ref reaction :set-hint set-hint :label "reaction"}))
                   #_($ button
-                       {:style {:color "#a769ff"
+                       {:style {:color (:tool-bar-text colors)
                                 :margin "0 0 0 8px"}
                         :on-mouse-enter #(set-hint "restore to initial value")
                         :on-mouse-leave #(set-hint nil)
@@ -351,7 +378,7 @@
                     ($ :span type)
                     ($ editable-ref {:ref sub :set-hint set-hint :label "subscription" :type :sub}))
                   #_($ button
-                       {:style {:color "#a769ff"
+                       {:style {:color (:tool-bar-text colors)
                                 :margin "0 0 0 8px"}
                         :on-mouse-enter #(set-hint "restore to initial value")
                         :on-mouse-leave #(set-hint nil)
@@ -364,7 +391,8 @@
              subs))))))
 
 (defui hooks-view [{:keys [node]}]
-  (let [hooks (node->hooks (.-memoizedState node))]
+  (let [hooks (node->hooks (.-memoizedState node))
+        colors (uix/use-context theme)]
     (when (seq hooks)
       ($ :div {:style {:margin "8px 0 0 0"}}
          ($ section-header "hooks")
@@ -438,7 +466,8 @@
     [ref set-active]))
 
 (defui resize-handle [{:keys [set-size dir max min location] :as props}]
-  (let [[ref set-active] (use-resize-handler props)]
+  (let [[ref set-active] (use-resize-handler props)
+        colors (uix/use-context theme)]
     ($ :div {:ref ref
              :on-mouse-down #(set-active true)
              :style {:height (if (= dir :vertical) "4px" "100%")
@@ -447,7 +476,7 @@
                      :left (when (not= location :left) 0)
                      :right (when (= location :left) 0)
                      :top 0
-                     :background "#fcf8ff"
+                     :background (:resize-handle colors)
                      :cursor (if (= dir :vertical) :ns-resize :ew-resize)}})))
 
 (uix/defhook use-size [v k]
@@ -469,7 +498,8 @@
   (let [{:keys [selected]} state
         [size set-size] (use-size 35 :cljs-devtools-inspector/ui-size)
         [active? set-active] (uix/use-state false)
-        horizontal? (contains? #{:window :bottom} location)]
+        horizontal? (contains? #{:window :bottom} location)
+        colors (uix/use-context theme)]
     (uix/use-effect
       (fn []
         (if active?
@@ -560,7 +590,8 @@
 (defui toolbar
   [{:keys [state set-state hint set-hint
            set-inspecting inspecting? dock-devtools location]}]
-  (let [{:keys [hide-dom?]} state]
+  (let [{:keys [hide-dom?]} state
+        colors (uix/use-context theme)]
     ($ :div
        {:style {:padding       "4px 8px"
                 :border-bottom "1px solid #8632ff75"
@@ -581,12 +612,12 @@
              "Hide DOM nodes"))
        ($ :div {:style {:display :flex
                         :align-items :center}}
-          ($ :div {:style {:color "#a769ff"
+          ($ :div {:style {:color (:tool-bar-text colors)
                            :opacity (if (str/blank? hint) 0 1)
                            :transition "opacity 100ms ease-in-out"}}
              hint)
           ($ button
-             {:style {:color "#a769ff"
+             {:style {:color (:tool-bar-text colors)
                       :background (when inspecting? (:highlight-bg colors))
                       :margin "0 0 0 8px"}
               :on-mouse-enter #(set-hint "select an element to inspect")
@@ -596,7 +627,7 @@
              icon-cursor-rays)
           (when (not= :window location)
             ($ button
-               {:style {:color "#a769ff"
+               {:style {:color (:tool-bar-text colors)
                         :margin "0 0 0 8px"}
                 :on-mouse-enter #(set-hint "undock into separate window")
                 :on-mouse-leave #(set-hint nil)
@@ -604,7 +635,7 @@
                 :on-click #(dock-devtools :location :window)}
                icon-window))
           ($ button
-             {:style {:color "#a769ff"
+             {:style {:color (:tool-bar-text colors)
                       :margin "0 0 0 8px"}
               :on-mouse-enter #(set-hint "dock to bottom")
               :on-mouse-leave #(set-hint nil)
@@ -613,7 +644,7 @@
               :on-click #(close-window :bottom)}
              icon-dock-bottom)
           ($ button
-             {:style {:color "#a769ff"
+             {:style {:color (:tool-bar-text colors)
                       :margin "0 0 0 8px"}
               :on-mouse-enter #(set-hint "dock to the left")
               :on-mouse-leave #(set-hint nil)
@@ -622,7 +653,7 @@
               :on-click #(close-window :left)}
              icon-dock-left)
           ($ button
-             {:style {:color "#a769ff"
+             {:style {:color (:tool-bar-text colors)
                       :margin "0 0 0 8px"}
               :on-mouse-enter #(set-hint "dock to the right")
               :on-mouse-leave #(set-hint nil)
@@ -723,7 +754,8 @@
         on-target (uix/use-callback
                     (fn [fiber]
                       (set-state #(assoc % :selected fiber)))
-                    [])]
+                    [])
+        colors (uix/use-context theme)]
     (uix/use-effect
       (fn []
         (let [handler (fns/throttle #(set-tid inc) 100)
@@ -757,8 +789,8 @@
                   :height     (case location
                                 (:left :right :window) "100vh"
                                 :bottom (str size "vh"))
-                  :background "#fefdff"
-                  :color      "#51485f"
+                  :background (:devtools-bg colors)
+                  :color      (:devtools-text colors)
                   :font       "normal 14px sans-serif"
                   :display    :flex
                   :border-top (when (= location :bottom) "2px solid #8632ff75")
@@ -814,7 +846,7 @@
                           ($ :div {:style {:flex       1
                                            :overflow-y :auto
                                            :padding    "8px 0"
-                                           :background "#fbfafd"}}
+                                           :background (:tree-view-bg colors)}}
                              ($ (.-Provider preview-ctx) {:value set-preview-node}
                                (for [node (node->siblings (.-child fiber))]
                                  ($ tree-view {:node      node
@@ -827,9 +859,20 @@
                               :set-hint set-hint
                               :location location})))))))))
 
+(defn matches? []
+  (.-matches (js/window.matchMedia "(prefers-color-scheme: dark)")))
+
 (defui devtools [{:keys [shortcut location] :as props}]
   (let [[visible? set-visible] (uix/use-state #(let [v (js/JSON.parse (js/localStorage.getItem ":cljs-devtools/visible?"))]
-                                                 (or (nil? v) v)))]
+                                                 (or (nil? v) v)))
+        [dark-mode? set-dark-mode] (uix/use-state matches?)]
+    (uix/use-effect
+      (fn []
+        (let [handler #(set-dark-mode (matches?))
+              m (js/window.matchMedia "(prefers-color-scheme: dark)")]
+          (.addListener m handler)
+          #(.removeListener m handler)))
+      [])
     (uix/use-effect
      (fn []
        (when (string? shortcut)
@@ -855,7 +898,8 @@
         (js/localStorage.setItem ":cljs-devtools/visible?" visible?))
       [visible?])
     (when visible?
-      ($ devtools* props))))
+      ($ (.-Provider theme) {:value (if dark-mode? (:dark color-themes) (:light color-themes))}
+        ($ devtools* props)))))
 
 (defn hijack-re-frame []
   (when (exists? js/re-frame.core.subscribe)
