@@ -32,3 +32,5 @@ Supported React wrappers:
 1. Install NPM deps
 2. Run `clojure -A:examples -M -m shadow.cljs.devtools.cli watch examples`
 3. Open `http://localhost:3000/`
+
+[_Support development of the project via GitHub Sponsors program_](https://github.com/sponsors/roman01la)
