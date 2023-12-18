@@ -859,7 +859,8 @@
                                         :flex-direction (if (#{:window :bottom} location) :row :column)
                                         :flex       1
                                         :max-height "100%"
-                                        :min-height "100%"}}
+                                        :min-height "100%"
+                                        :width "100vw"}}
                           ($ :div {:style {:flex       1
                                            :overflow-y :auto
                                            :padding    "8px 0"
