@@ -71,6 +71,14 @@
          (= js/Object (.-constructor el-type))
          (= (aget el-type "$$typeof") (.for js/Symbol "react.memo")))))
 
+(defn demunge-name [name]
+  (let [s (str/split (demunge-str name) #"\.")]
+    (str (str/join "." (butlast s)) "/" (last s))))
+
+(defn demunge-fn-name [name]
+  (let [s (str/split (demunge-str name) #"/")]
+    (str (str/join "." (butlast s)) "/" (last s))))
+
 (defn node->name [^js node]
   (let [el-type (.-elementType node)
         memo? (memo-node? (.-return node))]
@@ -79,10 +87,10 @@
         (string? el-type) el-type
 
         (reagent-node? node)
-        (let [s (str/split (demunge-str (.-displayName el-type)) #"\.")]
-          (str (str/join "." (butlast s)) "/" (last s)))
+        (demunge-name (.-displayName el-type))
 
-        (fn? el-type) (.-displayName el-type))
+        (fn? el-type) (or (.-displayName el-type)
+                          (demunge-fn-name (.-name el-type))))
       (when memo?
         " [memo]"))))
 
