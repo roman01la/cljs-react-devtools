@@ -43,8 +43,11 @@
 
 (declare tree-view)
 
+(defn fiber->child [fiber]
+  (or (.-child fiber) (some-> fiber .-alternate .-child)))
+
 (defn render-children [^js node state set-state]
-  (let [child (.-child node)]
+  (let [child (fiber->child node)]
     (when child
       (for [node (node->siblings child)]
         ($ tree-view {:node      node
@@ -132,7 +135,7 @@
 
 (defui tree-view [{:keys [^js node state set-state]}]
   (let [memo? (memo-node? node)
-        node (if memo? (.-child node) node)
+        node (if memo? (fiber->child node) node)
         el-type (.-elementType node)
         [closed? set-closed] (uix/use-state false)
         {:keys [hide-dom? selected]} state
@@ -146,7 +149,7 @@
 
       :else
       ($ :div {:style {:margin "4px 0 4px 8px"}}
-         (when (.-child node)
+         (when (fiber->child node)
            ($ :span {:style {:margin "0 4px 0 0"
                              :color (:icon-chevron colors)
                              :display :inline-block
@@ -677,7 +680,7 @@
     (uix/use-effect
       (fn []
         (if preview-node
-          (let [nodes (tree-seq #(some? (.-child %)) #(node->siblings (.-child %))
+          (let [nodes (tree-seq #(some? (fiber->child %)) #(node->siblings (fiber->child %))
                                 preview-node)]
             (when-let [node (some #(when (.-stateNode %) %) nodes)]
               (let [dom-node (.-stateNode node)
@@ -746,7 +749,7 @@
                                      (some #(when (str/starts-with? % "__reactContainer") (aget root %))))))
                             [root tid])
         [state set-state] (uix/use-state {:hide-dom? true
-                                          :selected  (when (and root fiber) (.-child fiber))})
+                                          :selected  (when (and root fiber) (fiber->child fiber))})
         [size set-size] (use-size 35 :cljs-devtools/ui-size)
         [hint set-hint] (uix/use-state "")
         [inspecting? set-inspecting] (uix/use-state false)
@@ -848,7 +851,7 @@
                                            :padding    "8px 0"
                                            :background (:tree-view-bg colors)}}
                              ($ (.-Provider preview-ctx) {:value set-preview-node}
-                               (for [node (node->siblings (.-child fiber))]
+                               (for [node (node->siblings (fiber->child fiber))]
                                  ($ tree-view {:node      node
                                                :state     state
                                                :set-state set-state
