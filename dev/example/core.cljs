@@ -265,10 +265,7 @@
                      :flex-direction :column
                      :width "100vw"
                      :height "100vh"}}
-       ($ toolbar {:state state :set-state set-state :on-add-shape on-add-shape
-                   :data #{1 2 3 [9 8] (random-uuid)}
-                   :yo #js {:hello "world"
-                            :mamma #js [1 2 3]}})
+       ($ toolbar {:state state :set-state set-state :on-add-shape on-add-shape})
        ($ canvas {:state state
                   :on-object-select on-object-select
                   :on-object-changed on-object-changed}))))
