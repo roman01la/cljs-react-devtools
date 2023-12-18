@@ -37,9 +37,10 @@
     :tree-view-bg "#2d292d"}})
 
 (defn node->siblings [^js node]
-  (lazy-seq
-    (cons node (when (.-sibling node)
-                 (node->siblings (.-sibling node))))))
+  (when node
+    (lazy-seq
+      (cons node (when (.-sibling node)
+                   (node->siblings (.-sibling node)))))))
 
 (declare tree-view)
 
@@ -141,6 +142,11 @@
 
 (def preview-ctx (uix/create-context))
 
+(defn has-non-primitive-children? [node]
+  (let [children (node->siblings (fiber->child node))]
+    (some #(nil? (.-elementType %)) children)))
+
+
 (defui tree-view [{:keys [^js node state set-state]}]
   (let [memo? (memo-node? node)
         node (if memo? (fiber->child node) node)
@@ -157,7 +163,7 @@
 
       :else
       ($ :div {:style {:margin "4px 0 4px 8px"}}
-         (when (fiber->child node)
+         (when-not (has-non-primitive-children? node)
            ($ :span {:style {:margin "0 4px 0 0"
                              :color (:icon-chevron colors)
                              :display :inline-block
