@@ -291,7 +291,8 @@
                     :style {:margin 0}})
 
       (reagent-node? node)
-      ($ data-view {:data  (vec (rest (some-> node .-memoizedProps .-argv)))
+      ($ data-view {:data  (let [props (rest (some-> node .-memoizedProps .-argv))]
+                             (when (seq props) (vec props)))
                     :style {:margin 0}})
 
       (uix-node? node)
