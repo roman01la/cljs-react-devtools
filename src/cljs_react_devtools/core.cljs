@@ -305,14 +305,17 @@
             (when (.-next mem-state)
               (node->hooks (.-next mem-state)))))))
 
+(defn node->captured-state [node]
+  (some-> node .-stateNode ^js (.-cljsRatom) .-captured))
+
 (defn node->rf-subs [^js node]
-  (->> (.. node -stateNode -cljsRatom -captured)
+  (->> (node->captured-state node)
        (keep #(when (.-__devtools-label ^js %)
                 [($ data-view {:data (.-__devtools-label ^js %) :style {:margin 0}})
                  %]))))
 
 (defn node->reactions [^js node]
-  (->> (.. node -stateNode -cljsRatom -captured)
+  (->> (node->captured-state node)
        (keep #(when (.. ^js % -state -generation)
                 ["ratom" (aget (.-state %) 0)]))))
 
