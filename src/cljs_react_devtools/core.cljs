@@ -317,8 +317,8 @@
 
 (defn node->reactions [^js node]
   (->> (node->captured-state node)
-       (keep #(when (.. ^js % -state -generation)
-                ["ratom" (aget (.-state %) 0)]))))
+       (keep #(when-not (.. ^js % -state -generation)
+                ["ratom" %]))))
 
 (defn camel-case->kebab-case [s]
   (->> (str/split s #"(?<=[a-z])(?=[A-Z])")
