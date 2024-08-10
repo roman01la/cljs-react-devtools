@@ -8,8 +8,6 @@
 
 (defonce popout-window (atom nil))
 
-(def theme (uix/create-context))
-
 (def color-themes
   {:light
    {:highlight-text "#8835ff"
@@ -35,6 +33,8 @@
     :devtools-bg "#302b32"
     :devtools-text "#ede2ff"
     :tree-view-bg "#2d292d"}})
+
+(def theme (uix/create-context (:light color-themes)))
 
 (defn node->siblings [^js node]
   (when node
@@ -309,15 +309,19 @@
 (defn node->captured-state [node]
   (some-> node .-stateNode ^js (.-cljsRatom) .-captured))
 
+(defn- rf-sub [^js node]
+  (.-__devtools-label node))
+
 (defn node->rf-subs [^js node]
   (->> (node->captured-state node)
-       (keep #(when (.-__devtools-label ^js %)
-                [($ data-view {:data (.-__devtools-label ^js %) :style {:margin 0}})
+       (keep #(when-let [label (rf-sub %)]
+                [($ data-view {:data label :style {:margin 0}})
                  %]))))
 
 (defn node->reactions [^js node]
   (->> (node->captured-state node)
-       (keep #(when-not (.. ^js % -state -generation)
+       (keep #(when (and (not (some-> ^js % .-state .-generation))
+                         (not (rf-sub %)))
                 ["ratom" %]))))
 
 (defn camel-case->kebab-case [s]
@@ -701,13 +705,13 @@
           (let [nodes (tree-seq #(some? (fiber->child %)) #(node->siblings (fiber->child %))
                                 preview-node)]
             (when-let [node (some #(when (.-stateNode %) %) nodes)]
-              (let [dom-node (.-stateNode node)
-                    rect (if (.-getBoundingClientRect dom-node)
-                           ;; DOM node
-                           (.getBoundingClientRect dom-node)
-                           ;; class component
-                           (.getBoundingClientRect (uix.dom/find-dom-node dom-node)))]
-                (set-rect rect))))
+              (let [dom-node (.-stateNode node)]
+                (when-let [rect (if (.-getBoundingClientRect dom-node)
+                                  ;; DOM node
+                                  (.getBoundingClientRect dom-node)
+                                  ;; class component
+                                  (some-> (uix.dom/find-dom-node dom-node) (.getBoundingClientRect)))]
+                  (set-rect rect)))))
           (let [node! (atom nil)
                 mouse-handler (fn [^js e]
                                 (let [x (.-x e)
@@ -736,7 +740,7 @@
     rect))
 
 (defui inspector-overlay [{:keys [set-inspecting root on-target skip-dom? preview-node] :as props}]
-  (let [rect (use-dom-inspector props)]
+  (when-let [rect (use-dom-inspector props)]
     ($ :div
        {:style {:z-index 9998
                 :position :fixed
@@ -746,17 +750,16 @@
                 :left 0
                 :background "#e7c2ff1a"
                 :on-click #(.stopPropagation %)}}
-       (when rect
-         ($ :div
-            {:style {:position :absolute
-                     :top  (.-y rect)
-                     :left (.-x rect)
-                     :width (.-width rect)
-                     :height (.-height rect)
-                     :background "#cd80ffa6"
-                     :box-sizing :border-box
-                     :border "1px dashed #da33ff"
-                     :pointer-events :none}})))))
+       ($ :div
+          {:style {:position :absolute
+                   :top  (.-y rect)
+                   :left (.-x rect)
+                   :width (.-width rect)
+                   :height (.-height rect)
+                   :background "#cd80ffa6"
+                   :box-sizing :border-box
+                   :border "1px dashed #da33ff"
+                   :pointer-events :none}}))))
 
 (defui devtools* [{:keys [root location]}]
   (let [[tid set-tid] (uix/use-state 0)
