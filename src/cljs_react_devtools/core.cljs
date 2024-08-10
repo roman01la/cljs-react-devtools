@@ -271,9 +271,19 @@
                                            :text-wrap :nowrap}}
                             (pr-str data))
          (fn? data) ($ :span {:style {:color (:data-view-primitive colors)}} (str "fn<"
-                                                                                  (if (str/blank? (.-name data))
+                                                                                  (cond
+                                                                                    (str/blank? (.-name data))
                                                                                     "anonymous"
-                                                                                    (.-name data))
+                                                                                    
+                                                                                    (str/includes? (.-name data) "$")
+                                                                                    (let [parts (-> (.-name data)
+                                                                                                    demunge
+                                                                                                    (str/split "/"))
+                                                                                          name (last parts)
+                                                                                          ns (str/join "." (butlast parts))]
+                                                                                      (str ns "/" name))
+                                                                                    
+                                                                                    :else (.-name data))
                                                                                   ">"))
          (= js/Object (.-constructor data)) ($ data-view-map
                                                {:data       data
