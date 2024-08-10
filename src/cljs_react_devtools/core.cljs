@@ -263,11 +263,13 @@
          (map? data) ($ data-view-map {:data data})
          (vector? data) ($ data-view-seq {:data data :brackets ["[" "]"]})
          (set? data) ($ data-view-seq {:data data :brackets ["#{" "}"]})
+         (seq? data) ($ data-view-seq {:data data :brackets ["(" ")"]})
          (number? data) ($ :span {:style {:color (:data-view-primitive colors)}} (pr-str data))
          (nil? data) ($ :span {:style {:color (:data-view-primitive colors)}} (pr-str data))
          (boolean? data) ($ :span {:style {:color (:data-view-primitive colors)}} (pr-str data))
          (string? data) ($ :span {:style {:color (:data-view-string colors)}} (pr-str data))
-         (keyword? data) ($ :span {:style {:color     (:data-view-keyword colors)
+         (uuid? data) ($ :span {:style {:color (:data-view-string colors)}} (pr-str data))
+         (keyword? data) ($ :span {:style {:color (:data-view-keyword colors)
                                            :text-wrap :nowrap}}
                             (pr-str data))
          (fn? data) ($ :span {:style {:color (:data-view-primitive colors)}} (str "fn<"
