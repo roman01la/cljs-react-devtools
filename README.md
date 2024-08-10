@@ -21,6 +21,10 @@ Supported React wrappers:
 
 ## Setup
 1. Install the library via Git deps
+```clj
+{:deps {roman01la/cljs-react-devtools {:git/url "https://github.com/roman01la/cljs-react-devtools.git"
+                                       :sha "{{COMMIT SHA}}"}}}
+```
 2. Initialize DevTools
 ```clojure
 (cljs-react-devtools.core/init!
