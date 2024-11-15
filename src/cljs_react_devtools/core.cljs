@@ -80,10 +80,10 @@
   (let [s (str/split (demunge-str name) #"/")]
     (str (str/join "." (butlast s)) "/" (last s))))
 
-(defn node->name [^js node]
+(defn node->name [^js node & {:keys [show-lib?]}]
   (let [el-type (.-elementType node)
         memo? (memo-node? (.-return node))]
-    (str
+    ($ :<>
       (cond
         (string? el-type) el-type
 
@@ -93,7 +93,12 @@
         (fn? el-type) (or (.-displayName el-type)
                           (demunge-fn-name (.-name el-type))))
       (when memo?
-        " [memo]"))))
+        " [memo]")
+      (when show-lib?
+        (cond
+          (reagent-node? node) " [reagent]"
+          (uix-node? node) " [uix]"
+          (fn? el-type) " [react]")))))
 
 (defui button [props]
   ($ :button
@@ -182,10 +187,10 @@
          (when-not closed?
            (render-children node state set-state))))))
 
-(declare data-view)
+(declare data-view closed-data-view)
 
 (defui data-view-map
-  [{:keys [data tag entries-fn key-fn]
+  [{:keys [data tag entries-fn key-fn open? set-open]
     :or   {entries-fn seq
            key-fn     identity}}]
   (let [entries (entries-fn data)]
@@ -204,11 +209,14 @@
                             "{")))
                ($ data-view {:data  (key-fn key)
                              :key?  true
+                             :on-click #(set-open not)
                              :style {:margin-left (when (pos? idx)
                                                     (if tag
                                                       (* 7.5 (+ 3 (count tag)))
                                                       6))}})
-               ($ data-view {:data val})
+               (if open?
+                 ($ data-view {:data val})
+                 ($ closed-data-view {:data val :set-open set-open}))
                (when last-idx?
                  ($ :div
                     {:style {:display         :flex
@@ -245,8 +253,25 @@
 
 (defonce hint-ctx (uix/create-context))
 
-(defui data-view
-  [{:keys [data style key?]}]
+(defn- fmt-fn [data]
+  (str "fn<"
+       (cond
+         (str/blank? (.-name data))
+         "anonymous"
+
+         (str/includes? (.-name data) "$")
+         (let [parts (-> (.-name data)
+                         demunge
+                         (str/split "/"))
+               name (last parts)
+               ns (str/join "." (butlast parts))]
+           (str ns "/" name))
+
+         :else (.-name data))
+       ">"))
+
+(defui closed-data-view
+  [{:keys [data style key? set-open]}]
   (let [set-active (uix/use-context hint-ctx)
         colors (uix/use-context theme)]
     ($ :pre
@@ -256,11 +281,49 @@
                          style)
         :on-mouse-enter #(set-active true)
         :on-mouse-leave #(set-active false)
-        :on-click #(when-not key?
-                     (.stopPropagation %)
-                     (js/console.dir data))}
+        :on-click #(do
+                     (set-open not)
+                     (when-not key?
+                       (.stopPropagation %)
+                       (js/console.dir data)))}
        (cond
-         (map? data) ($ data-view-map {:data data})
+         (map? data) "{...}"
+         (vector? data) "[...]"
+         (set? data) "#{...}"
+         (seq? data) "(...)"
+         (number? data) ($ :span {:style {:color (:data-view-primitive colors)}} (pr-str data))
+         (nil? data) ($ :span {:style {:color (:data-view-primitive colors)}} (pr-str data))
+         (boolean? data) ($ :span {:style {:color (:data-view-primitive colors)}} (pr-str data))
+         (string? data) ($ :span {:style {:color (:data-view-string colors)}} (pr-str data))
+         (uuid? data) ($ :span {:style {:color (:data-view-string colors)}} (pr-str data))
+         (keyword? data) ($ :span {:style {:color (:data-view-keyword colors)
+                                           :text-wrap :nowrap}}
+                            (pr-str data))
+         (fn? data) ($ :span {:style {:color (:data-view-primitive colors)}}
+                       (fmt-fn data))
+         (= js/Object (.-constructor data)) "#js {...}"
+         (= js/Array (.-constructor data)) "#js [...]"
+         :else "..."))))
+
+(defui ^:memo data-view
+  [{:keys [data style key? on-click open?]}]
+  (let [set-active (uix/use-context hint-ctx)
+        colors (uix/use-context theme)
+        [open? set-open] (uix/use-state open?)]
+    ($ :pre
+       {:style    (merge {:margin "0 0 0 8px"
+                          :cursor      :pointer
+                          :font-size   "12px"}
+                         style)
+        :on-mouse-enter #(set-active true)
+        :on-mouse-leave #(set-active false)
+        :on-click (fn [e]
+                    (when on-click (on-click))
+                    (when-not key?
+                      (.stopPropagation e)
+                      (js/console.dir data)))}
+       (cond
+         (map? data) ($ data-view-map {:data data :open? open? :set-open set-open})
          (vector? data) ($ data-view-seq {:data data :brackets ["[" "]"]})
          (set? data) ($ data-view-seq {:data data :brackets ["#{" "}"]})
          (seq? data) ($ data-view-seq {:data data :brackets ["(" ")"]})
@@ -272,21 +335,8 @@
          (keyword? data) ($ :span {:style {:color (:data-view-keyword colors)
                                            :text-wrap :nowrap}}
                             (pr-str data))
-         (fn? data) ($ :span {:style {:color (:data-view-primitive colors)}} (str "fn<"
-                                                                                  (cond
-                                                                                    (str/blank? (.-name data))
-                                                                                    "anonymous"
-                                                                                    
-                                                                                    (str/includes? (.-name data) "$")
-                                                                                    (let [parts (-> (.-name data)
-                                                                                                    demunge
-                                                                                                    (str/split "/"))
-                                                                                          name (last parts)
-                                                                                          ns (str/join "." (butlast parts))]
-                                                                                      (str ns "/" name))
-                                                                                    
-                                                                                    :else (.-name data))
-                                                                                  ">"))
+         (fn? data) ($ :span {:style {:color (:data-view-primitive colors)}}
+                       (fmt-fn data))
          (= js/Object (.-constructor data)) ($ data-view-map
                                                {:data       data
                                                 :tag        "js"
@@ -568,7 +618,7 @@
                              :display :block
                              :color   (:highlight-text colors)
                              :width   :fit-content}}
-                 (node->name selected))
+                 (node->name selected :show-lib? true))
               ($ :div {:style {:margin     "8px 0 0 0"
                                :overflow-y :auto
                                :flex       1}}
