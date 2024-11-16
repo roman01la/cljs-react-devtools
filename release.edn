@@ -1,0 +1,4 @@
+{:group-id "com.github.roman01la"
+ :artifact-id "cljs-react-devtools"
+ :version "0.1.0"
+ :scm-url "https://github.com/roman01la/cljs-react-devtools"}
