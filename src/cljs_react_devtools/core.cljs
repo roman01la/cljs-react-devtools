@@ -80,25 +80,32 @@
   (let [s (str/split (demunge-str name) #"/")]
     (str (str/join "." (butlast s)) "/" (last s))))
 
-(defn node->name [^js node & {:keys [show-lib?]}]
+(defn node->name [^js node & {:keys [lib? file?]}]
   (let [el-type (.-elementType node)
         memo? (memo-node? (.-return node))]
-    ($ :<>
-      (cond
-        (string? el-type) el-type
-
-        (reagent-node? node)
-        (demunge-name (.-displayName el-type))
-
-        (fn? el-type) (or (.-displayName el-type)
-                          (demunge-fn-name (.-name el-type))))
-      (when memo?
-        " [memo]")
-      (when show-lib?
+    ($ :div {:style {:display :flex
+                     :justify-content :space-between}}
+      ($ :span
         (cond
-          (reagent-node? node) " [reagent]"
-          (uix-node? node) " [uix]"
-          (fn? el-type) " [react]")))))
+          (string? el-type) el-type
+
+          (reagent-node? node)
+          (demunge-name (.-displayName el-type))
+
+          (fn? el-type) (or (.-displayName el-type)
+                            (demunge-fn-name (.-name el-type))))
+        (when memo?
+          " [memo]")
+        (when lib?
+          (cond
+            (reagent-node? node) " [reagent]"
+            (uix-node? node) " [uix]"
+            (fn? el-type) " [react]")))
+      ($ :span
+        (when (and file?
+                   (fn? el-type))
+          (when-let [o (.. node -type -_source)]
+            (str (.-file o) ":" (.-lineNumber o))))))))
 
 (defui button [props]
   ($ :button
@@ -616,9 +623,8 @@
                   :on-mouse-leave #(set-active false)
                   :style    {:margin  "8px 0 0 0"
                              :display :block
-                             :color   (:highlight-text colors)
-                             :width   :fit-content}}
-                 (node->name selected :show-lib? true))
+                             :color   (:highlight-text colors)}}
+                 (node->name selected :lib? true :file? true))
               ($ :div {:style {:margin     "8px 0 0 0"
                                :overflow-y :auto
                                :flex       1}}
