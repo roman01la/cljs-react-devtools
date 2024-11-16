@@ -3,3 +3,5 @@ node_modules
 .idea
 *.iml
 .shadow-cljs
+out
+target

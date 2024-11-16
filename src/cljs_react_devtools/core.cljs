@@ -8,8 +8,6 @@
 
 (defonce popout-window (atom nil))
 
-(def theme (uix/create-context))
-
 (def color-themes
   {:light
    {:highlight-text "#8835ff"
@@ -36,15 +34,21 @@
     :devtools-text "#ede2ff"
     :tree-view-bg "#2d292d"}})
 
+(def theme (uix/create-context (:light color-themes)))
+
 (defn node->siblings [^js node]
-  (lazy-seq
-    (cons node (when (.-sibling node)
-                 (node->siblings (.-sibling node))))))
+  (when node
+    (lazy-seq
+      (cons node (when (.-sibling node)
+                   (node->siblings (.-sibling node)))))))
 
 (declare tree-view)
 
+(defn fiber->child [fiber]
+  (or (.-child fiber) (some-> fiber .-alternate .-child)))
+
 (defn render-children [^js node state set-state]
-  (let [child (.-child node)]
+  (let [child (fiber->child node)]
     (when child
       (for [node (node->siblings child)]
         ($ tree-view {:node      node
@@ -68,20 +72,40 @@
          (= js/Object (.-constructor el-type))
          (= (aget el-type "$$typeof") (.for js/Symbol "react.memo")))))
 
-(defn node->name [^js node]
+(defn demunge-name [name]
+  (let [s (str/split (demunge-str name) #"\.")]
+    (str (str/join "." (butlast s)) "/" (last s))))
+
+(defn demunge-fn-name [name]
+  (let [s (str/split (demunge-str name) #"/")]
+    (str (str/join "." (butlast s)) "/" (last s))))
+
+(defn node->name [^js node & {:keys [lib? file?]}]
   (let [el-type (.-elementType node)
         memo? (memo-node? (.-return node))]
-    (str
-      (cond
-        (string? el-type) el-type
+    ($ :div {:style {:display :flex
+                     :justify-content :space-between}}
+      ($ :span
+        (cond
+          (string? el-type) el-type
 
-        (reagent-node? node)
-        (let [s (str/split (demunge-str (.-displayName el-type)) #"\.")]
-          (str (str/join "." (butlast s)) "/" (last s)))
+          (reagent-node? node)
+          (demunge-name (.-displayName el-type))
 
-        (fn? el-type) (.-displayName el-type))
-      (when memo?
-        " [memo]"))))
+          (fn? el-type) (or (.-displayName el-type)
+                            (demunge-fn-name (.-name el-type))))
+        (when memo?
+          " [memo]")
+        (when lib?
+          (cond
+            (reagent-node? node) " [reagent]"
+            (uix-node? node) " [uix]"
+            (fn? el-type) " [react]")))
+      ($ :span
+        (when (and file?
+                   (fn? el-type))
+          (when-let [o (.. node -type -_source)]
+            (str (.-file o) ":" (.-lineNumber o))))))))
 
 (defui button [props]
   ($ :button
@@ -130,9 +154,14 @@
 
 (def preview-ctx (uix/create-context))
 
+(defn has-non-primitive-children? [node]
+  (let [children (node->siblings (fiber->child node))]
+    (some #(nil? (.-elementType %)) children)))
+
+
 (defui tree-view [{:keys [^js node state set-state]}]
   (let [memo? (memo-node? node)
-        node (if memo? (.-child node) node)
+        node (if memo? (fiber->child node) node)
         el-type (.-elementType node)
         [closed? set-closed] (uix/use-state false)
         {:keys [hide-dom? selected]} state
@@ -146,7 +175,7 @@
 
       :else
       ($ :div {:style {:margin "4px 0 4px 8px"}}
-         (when (.-child node)
+         (when-not (has-non-primitive-children? node)
            ($ :span {:style {:margin "0 4px 0 0"
                              :color (:icon-chevron colors)
                              :display :inline-block
@@ -155,6 +184,7 @@
               icon-chevron-down))
          ($ button
             {:style    {:color      (:highlight-text colors)
+                        :user-select :none
                         :background (when selected? (:highlight-bg colors))}
              :on-mouse-enter #(set-preview-node node)
              :on-mouse-leave #(set-preview-node nil)
@@ -165,17 +195,19 @@
          (when-not closed?
            (render-children node state set-state))))))
 
-(declare data-view)
+(declare data-view closed-data-view)
 
 (defui data-view-map
-  [{:keys [data tag entries-fn key-fn]
+  [{:keys [data tag entries-fn key-fn open? set-open closing]
     :or   {entries-fn seq
            key-fn     identity}}]
   (let [entries (entries-fn data)]
     (when (seq entries)
       (map-indexed
         (fn [idx [key val]]
-          (let [last-idx? (= idx (dec (count entries)))]
+          (let [last-idx? (= idx (dec (count entries)))
+                closing (when last-idx?
+                          ($ :<> "}" closing))]
             ($ :div
                {:key   key
                 :style {:display :flex
@@ -185,86 +217,161 @@
                             (when tag
                               (str "#" tag " "))
                             "{")))
-               ($ data-view {:data  (key-fn key)
-                             :key?  true
-                             :style {:margin-left (when (pos? idx)
-                                                    (if tag
-                                                      (* 7.5 (+ 3 (count tag)))
-                                                      6))}})
-               ($ data-view {:data val})
-               (when last-idx?
-                 ($ :div
-                    {:style {:display         :flex
-                             :flex-direction  :column
-                             :justify-content :flex-end}}
-                    ($ :span "}"))))))
+               ($ data-view
+                  {:data  (key-fn key)
+                   :key?  true
+                   :on-click #(set-open not)
+                   :style {:margin-right 8
+                           :margin-left (when (pos? idx)
+                                          (if tag
+                                            (* 7.5 (+ 3 (count tag)))
+                                            6))}})
+               (if open?
+                 ($ data-view {:data val :closing closing})
+                 ($ :<>
+                    ($ closed-data-view {:data val :set-open set-open})
+                    closing)))))
         entries))))
 
 (defui data-view-seq
-  [{:keys        [data tag]
+  [{:keys        [data tag closing open? set-open]
     [open close] :brackets}]
   (if (empty? data)
-    ($ :span (str open close))
+    ($ :<> open close closing)
     ($ :div
        {:style {:display :flex}}
        (map-indexed
          (fn [idx val]
-           (let [last-idx? (= idx (dec (count data)))]
+           (let [last-idx? (= idx (dec (count data)))
+                 closing (when last-idx?
+                           ($ :<> close closing))]
              ($ :div
                 {:key   idx
                  :style {:display :flex}}
                 (when (zero? idx)
                   ($ :span
                      (str (when tag (str "#" tag " ")) open)))
-                ($ data-view {:data  val
-                              :style (when (zero? idx) {:margin 0})})
-                (when last-idx?
-                  ($ :div
-                     {:style {:display         :flex
-                              :flex-direction  :column
-                              :justify-content :flex-end}}
-                     ($ :span close))))))
+                (if open?
+                  ($ data-view
+                     {:data  val
+                      :style (when (zero? idx) {:margin 0})
+                      :closing closing})
+                  ($ :<>
+                     ($ closed-data-view {:data val :set-open set-open
+                                          :style (when-not last-idx? {:margin-right 8})})
+                     closing)))))
          data))))
 
 (defonce hint-ctx (uix/create-context))
 
-(defui data-view
-  [{:keys [data style key?]}]
+(defn- fmt-fn [data]
+  (str "fn<"
+       (cond
+         (str/blank? (.-name data))
+         "anonymous"
+
+         (str/includes? (.-name data) "$")
+         (let [parts (-> (.-name data)
+                         demunge
+                         (str/split "/"))
+               name (last parts)
+               ns (str/join "." (butlast parts))]
+           (str ns "/" name))
+
+         :else (.-name data))
+       ">"))
+
+(defui data-view-primitive [{:keys [data data-raw closing color]}]
+  (let [data (or data-raw (pr-str data))]
+    ($ :<>
+       ($ :span {:title data
+                 :style {:color color
+                         :max-width 180
+                         :display :inline-block
+                         :overflow :hidden
+                         :text-overflow :ellipsis}}
+          data)
+       closing)))
+
+(defn atomic-data-view [{:keys [data colors]}]
+  (cond
+    (number? data) ($ data-view-primitive {:data data :color (:data-view-primitive colors)})
+    (nil? data) ($ data-view-primitive {:data data :color (:data-view-primitive colors)})
+    (boolean? data) ($ data-view-primitive {:data data :color (:data-view-primitive colors)})
+    (string? data) ($ data-view-primitive {:data data :color (:data-view-string colors)})
+    (uuid? data) ($ data-view-primitive {:data data :color (:data-view-string colors)})
+    (keyword? data) ($ data-view-primitive {:data data :color (:data-view-keyword colors)})
+    (fn? data) ($ data-view-primitive {:data-raw (fmt-fn data) :color (:data-view-primitive colors)})))
+
+(defn- constructor [o]
+  (some-> o .-constructor))
+
+(def atomic? (some-fn number? nil? boolean? string? uuid? keyword? fn?))
+
+(defui closed-data-view
+  [{:keys [data style key? set-open]}]
   (let [set-active (uix/use-context hint-ctx)
         colors (uix/use-context theme)]
     ($ :pre
-       {:style    (merge {:margin "0 0 0 8px"
+       {:style    (merge {:margin 0
                           :cursor      :pointer
                           :font-size   "12px"}
                          style)
         :on-mouse-enter #(set-active true)
         :on-mouse-leave #(set-active false)
-        :on-click #(when-not key?
-                     (.stopPropagation %)
-                     (js/console.dir data))}
+        :on-click #(do
+                     (when-not (atomic? data)
+                       (set-open not))
+                     (when-not key?
+                       (.stopPropagation %)
+                       (js/console.dir data)))}
        (cond
-         (map? data) ($ data-view-map {:data data})
-         (vector? data) ($ data-view-seq {:data data :brackets ["[" "]"]})
-         (set? data) ($ data-view-seq {:data data :brackets ["#{" "}"]})
-         (number? data) ($ :span {:style {:color (:data-view-primitive colors)}} (pr-str data))
-         (nil? data) ($ :span {:style {:color (:data-view-primitive colors)}} (pr-str data))
-         (boolean? data) ($ :span {:style {:color (:data-view-primitive colors)}} (pr-str data))
-         (string? data) ($ :span {:style {:color (:data-view-string colors)}} (pr-str data))
-         (keyword? data) ($ :span {:style {:color     (:data-view-keyword colors)
-                                           :text-wrap :nowrap}}
-                            (pr-str data))
-         (fn? data) ($ :span {:style {:color (:data-view-primitive colors)}} (str "fn<"
-                                                                                  (if (str/blank? (.-name data))
-                                                                                    "anonymous"
-                                                                                    (.-name data))
-                                                                                  ">"))
-         (= js/Object (.-constructor data)) ($ data-view-map
-                                               {:data       data
-                                                :tag        "js"
-                                                :entries-fn js/Object.entries
-                                                :key-fn     keyword})
-         (= js/Array (.-constructor data)) ($ data-view-seq {:data data :tag "js" :brackets ["[" "]"]})
-         :else (pr-str data)))))
+         (map? data) (if (seq data) "{...}" "{}")
+         (vector? data) (if (seq data) "[...]" "[]")
+         (set? data) (if (seq data) "#{...}" "#{}")
+         (seq? data) (if (seq data) "(...)" "()")
+         (= js/Object (constructor data)) (if (pos? (.-length (js/Object.keys data)))
+                                            "#js {...}"
+                                            "#js {}")
+         (= js/Array (constructor data)) (if (pos? (.-length data))
+                                           "#js [...]"
+                                           "#js []")
+         :else (or (atomic-data-view {:data data :colors colors})
+                   "...")))))
+
+(defui ^:memo data-view
+  [{:keys [data style key? on-click open? closing]}]
+  (let [set-active (uix/use-context hint-ctx)
+        colors (uix/use-context theme)
+        [open? set-open] (uix/use-state open?)]
+    ($ :pre
+       {:style    (merge {:margin 0
+                          :cursor      :pointer
+                          :font-size   "12px"}
+                         style)
+        :on-mouse-enter #(set-active true)
+        :on-mouse-leave #(set-active false)
+        :on-click (fn [e]
+                    (when on-click (on-click))
+                    (when-not key?
+                      (.stopPropagation e)
+                      (js/console.dir data)))}
+       (cond
+         (map? data) ($ data-view-map {:data data :open? open? :set-open set-open :closing closing})
+         (vector? data) ($ data-view-seq {:data data :brackets ["[" "]"] :open? open? :set-open set-open :closing closing})
+         (set? data) ($ data-view-seq {:data data :brackets ["#{" "}"] :open? open? :set-open set-open :closing closing})
+         (seq? data) ($ data-view-seq {:data data :brackets ["(" ")"] :open? open? :set-open set-open :closing closing})
+         (= js/Object (constructor data)) ($ data-view-map
+                                             {:data       data
+                                              :tag        "js"
+                                              :entries-fn js/Object.entries
+                                              :key-fn     keyword
+                                              :open? open?
+                                              :set-open set-open
+                                              :closing closing})
+         (= js/Array (constructor data)) ($ data-view-seq {:data data :tag "js" :brackets ["[" "]"] :open? open? :set-open set-open :closing closing})
+         :else (or (atomic-data-view {:data data :colors colors})
+                   ($ :<> (pr-str data) closing))))))
 
 (defn node->props [^js node]
   (let [el-type (.-elementType node)]
@@ -274,7 +381,8 @@
                     :style {:margin 0}})
 
       (reagent-node? node)
-      ($ data-view {:data  (vec (rest (some-> node .-memoizedProps .-argv)))
+      ($ data-view {:data  (let [props (rest (some-> node .-memoizedProps .-argv))]
+                             (when (seq props) (vec props)))
                     :style {:margin 0}})
 
       (uix-node? node)
@@ -288,16 +396,23 @@
             (when (.-next mem-state)
               (node->hooks (.-next mem-state)))))))
 
+(defn node->captured-state [node]
+  (some-> node .-stateNode ^js (.-cljsRatom) .-captured))
+
+(defn- rf-sub [^js node]
+  (.-__devtools-label node))
+
 (defn node->rf-subs [^js node]
-  (->> (.. node -stateNode -cljsRatom -captured)
-       (keep #(when (.-__devtools-label ^js %)
-                [($ data-view {:data (.-__devtools-label ^js %) :style {:margin 0}})
+  (->> (node->captured-state node)
+       (keep #(when-let [label (rf-sub %)]
+                [($ data-view {:data label :style {:margin 0}})
                  %]))))
 
 (defn node->reactions [^js node]
-  (->> (.. node -stateNode -cljsRatom -captured)
-       (keep #(when (.. ^js % -state -generation)
-                ["ratom" (aget (.-state %) 0)]))))
+  (->> (node->captured-state node)
+       (keep #(when (and (not (some-> ^js % .-state .-generation))
+                         (not (rf-sub %)))
+                ["ratom" %]))))
 
 (defn camel-case->kebab-case [s]
   (->> (str/split s #"(?<=[a-z])(?=[A-Z])")
@@ -529,9 +644,8 @@
                   :on-mouse-leave #(set-active false)
                   :style    {:margin  "8px 0 0 0"
                              :display :block
-                             :color   (:highlight-text colors)
-                             :width   :fit-content}}
-                 (node->name selected))
+                             :color   (:highlight-text colors)}}
+                 (node->name selected :lib? true :file? true))
               ($ :div {:style {:margin     "8px 0 0 0"
                                :overflow-y :auto
                                :flex       1}}
@@ -677,16 +791,16 @@
     (uix/use-effect
       (fn []
         (if preview-node
-          (let [nodes (tree-seq #(some? (.-child %)) #(node->siblings (.-child %))
+          (let [nodes (tree-seq #(some? (fiber->child %)) #(node->siblings (fiber->child %))
                                 preview-node)]
             (when-let [node (some #(when (.-stateNode %) %) nodes)]
-              (let [dom-node (.-stateNode node)
-                    rect (if (.-getBoundingClientRect dom-node)
-                           ;; DOM node
-                           (.getBoundingClientRect dom-node)
-                           ;; class component
-                           (.getBoundingClientRect (uix.dom/find-dom-node dom-node)))]
-                (set-rect rect))))
+              (let [dom-node (.-stateNode node)]
+                (when-let [rect (if (.-getBoundingClientRect dom-node)
+                                  ;; DOM node
+                                  (.getBoundingClientRect dom-node)
+                                  ;; class component
+                                  (some-> (uix.dom/find-dom-node dom-node) (.getBoundingClientRect)))]
+                  (set-rect rect)))))
           (let [node! (atom nil)
                 mouse-handler (fn [^js e]
                                 (let [x (.-x e)
@@ -715,7 +829,7 @@
     rect))
 
 (defui inspector-overlay [{:keys [set-inspecting root on-target skip-dom? preview-node] :as props}]
-  (let [rect (use-dom-inspector props)]
+  (when-let [rect (use-dom-inspector props)]
     ($ :div
        {:style {:z-index 9998
                 :position :fixed
@@ -725,17 +839,16 @@
                 :left 0
                 :background "#e7c2ff1a"
                 :on-click #(.stopPropagation %)}}
-       (when rect
-         ($ :div
-            {:style {:position :absolute
-                     :top  (.-y rect)
-                     :left (.-x rect)
-                     :width (.-width rect)
-                     :height (.-height rect)
-                     :background "#cd80ffa6"
-                     :box-sizing :border-box
-                     :border "1px dashed #da33ff"
-                     :pointer-events :none}})))))
+       ($ :div
+          {:style {:position :absolute
+                   :top  (.-y rect)
+                   :left (.-x rect)
+                   :width (.-width rect)
+                   :height (.-height rect)
+                   :background "#cd80ffa6"
+                   :box-sizing :border-box
+                   :border "1px dashed #da33ff"
+                   :pointer-events :none}}))))
 
 (defui devtools* [{:keys [root location]}]
   (let [[tid set-tid] (uix/use-state 0)
@@ -746,7 +859,7 @@
                                      (some #(when (str/starts-with? % "__reactContainer") (aget root %))))))
                             [root tid])
         [state set-state] (uix/use-state {:hide-dom? true
-                                          :selected  (when (and root fiber) (.-child fiber))})
+                                          :selected  (when (and root fiber) (fiber->child fiber))})
         [size set-size] (use-size 35 :cljs-devtools/ui-size)
         [hint set-hint] (uix/use-state "")
         [inspecting? set-inspecting] (uix/use-state false)
@@ -842,13 +955,14 @@
                                         :flex-direction (if (#{:window :bottom} location) :row :column)
                                         :flex       1
                                         :max-height "100%"
-                                        :min-height "100%"}}
+                                        :min-height "100%"
+                                        :width (when (#{:window :bottom} location) "100vw")}}
                           ($ :div {:style {:flex       1
                                            :overflow-y :auto
                                            :padding    "8px 0"
                                            :background (:tree-view-bg colors)}}
                              ($ (.-Provider preview-ctx) {:value set-preview-node}
-                               (for [node (node->siblings (.-child fiber))]
+                               (for [node (node->siblings (fiber->child fiber))]
                                  ($ tree-view {:node      node
                                                :state     state
                                                :set-state set-state
