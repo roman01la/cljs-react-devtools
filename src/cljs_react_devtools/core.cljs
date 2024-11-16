@@ -517,7 +517,7 @@
                             (js/Array.isArray (aget hook 1))
                             (fn? (aget (aget hook 1) 0))
                             (= "bound dispatchSetState" (.-name (aget (aget hook 1) 0))))
-               (let [name (camel-case->kebab-case (aget (.-_debugHookTypes node) idx))]
+               (let [name (camel-case->kebab-case (aget (.-_debugHookTypes ^js node) idx))]
                  ($ :div {:key   idx
                           :style {:margin "8px 0"}}
                     ($ :span {:style {:color (:highlight-text colors)}}
@@ -814,7 +814,7 @@
                                   (when-let [target (->> (js/Object.keys node)
                                                          (some #(when (str/starts-with? % "__reactFiber")
                                                                   (if skip-dom?
-                                                                    (.-_debugOwner (aget node %))
+                                                                    (.-_debugOwner ^js (aget node %))
                                                                     (aget node %)))))]
                                     (on-target target)
                                     (set-inspecting false)

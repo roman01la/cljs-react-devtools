@@ -4,4 +4,5 @@
  {:examples {:target :browser
              :output-dir "out"
              :asset-path "/out"
-             :modules {:main {:entries [example.core]}}}}}
+             :modules {:main {:entries [example.core]}}
+             :release {:compiler-options {:optimizations :simple}}}}}
