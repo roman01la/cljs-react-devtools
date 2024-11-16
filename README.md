@@ -1,4 +1,6 @@
-# React DevTools for ClojureScript wrappers
+<img src="logo.svg" />
+
+_React DevTools for ClojureScript wrappers_
 
 > ⚠️ _EXPERIMENTAL_
 
