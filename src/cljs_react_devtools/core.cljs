@@ -34,7 +34,7 @@
     :devtools-text "#ede2ff"
     :tree-view-bg "#2d292d"}})
 
-(def theme (uix/create-context (:light color-themes)))
+(def theme-ctx (uix/create-context (:light color-themes)))
 
 (defn node->siblings [^js node]
   (when node
@@ -167,7 +167,7 @@
         {:keys [hide-dom? selected]} state
         selected? (= selected node)
         set-preview-node (uix/use-context preview-ctx)
-        colors (uix/use-context theme)]
+        colors (uix/use-context theme-ctx)]
     (cond
       (or (nil? el-type)
           (and (string? el-type) hide-dom?))
@@ -311,7 +311,7 @@
 (defui closed-data-view
   [{:keys [data style key? set-open]}]
   (let [set-active (uix/use-context hint-ctx)
-        colors (uix/use-context theme)]
+        colors (uix/use-context theme-ctx)]
     ($ :pre
        {:style    (merge {:margin 0
                           :cursor      :pointer
@@ -342,7 +342,7 @@
 (defui ^:memo data-view
   [{:keys [data style key? on-click open? closing]}]
   (let [set-active (uix/use-context hint-ctx)
-        colors (uix/use-context theme)
+        colors (uix/use-context theme-ctx)
         [open? set-open] (uix/use-state open?)]
     ($ :pre
        {:style    (merge {:margin 0
@@ -420,7 +420,7 @@
        (str/join "-")))
 
 (defui section-header [{:keys [children]}]
-  (let [colors (uix/use-context theme)]
+  (let [colors (uix/use-context theme-ctx)]
     ($ :div
        {:style {:color      (:highlight-text colors)
                 :background (:highlight-bg colors)
@@ -507,7 +507,7 @@
 
 (defui hooks-view [{:keys [node]}]
   (let [hooks (node->hooks (.-memoizedState node))
-        colors (uix/use-context theme)]
+        colors (uix/use-context theme-ctx)]
     (when (seq hooks)
       ($ :div {:style {:margin "8px 0 0 0"}}
          ($ section-header "hooks")
@@ -582,7 +582,7 @@
 
 (defui resize-handle [{:keys [set-size dir max min location] :as props}]
   (let [[ref set-active] (use-resize-handler props)
-        colors (uix/use-context theme)]
+        colors (uix/use-context theme-ctx)]
     ($ :div {:ref ref
              :on-mouse-down #(set-active true)
              :style {:height (if (= dir :vertical) "4px" "100%")
@@ -614,7 +614,7 @@
         [size set-size] (use-size 35 :cljs-devtools-inspector/ui-size)
         [active? set-active] (uix/use-state false)
         horizontal? (contains? #{:window :bottom} location)
-        colors (uix/use-context theme)]
+        colors (uix/use-context theme-ctx)]
     (uix/use-effect
       (fn []
         (if active?
@@ -705,7 +705,7 @@
   [{:keys [state set-state hint set-hint
            set-inspecting inspecting? dock-devtools location]}]
   (let [{:keys [hide-dom?]} state
-        colors (uix/use-context theme)]
+        colors (uix/use-context theme-ctx)]
     ($ :div
        {:style {:padding       "4px 8px"
                 :border-bottom "1px solid #8632ff75"
@@ -868,7 +868,7 @@
                     (fn [fiber]
                       (set-state #(assoc % :selected fiber)))
                     [])
-        colors (uix/use-context theme)]
+        colors (uix/use-context theme-ctx)]
     (uix/use-effect
       (fn []
         (let [handler (fns/throttle #(set-tid inc) 100)
@@ -976,7 +976,10 @@
 (defn matches? []
   (.-matches (js/window.matchMedia "(prefers-color-scheme: dark)")))
 
-(defui devtools [{:keys [shortcut location] :as props}]
+(defui devtools
+  [{:keys [shortcut location theme]
+    :or {theme color-themes}
+    :as props}]
   (let [[visible? set-visible] (uix/use-state #(let [v (js/JSON.parse (js/localStorage.getItem ":cljs-devtools/visible?"))]
                                                  (or (nil? v) v)))
         [dark-mode? set-dark-mode] (uix/use-state matches?)]
@@ -1012,8 +1015,11 @@
         (js/localStorage.setItem ":cljs-devtools/visible?" visible?))
       [visible?])
     (when visible?
-      ($ (.-Provider theme) {:value (if dark-mode? (:dark color-themes) (:light color-themes))}
-        ($ devtools* props)))))
+      ($ (.-Provider theme-ctx) {:value (or (if dark-mode?
+                                              (:dark theme)
+                                              (:light theme))
+                                            (:default theme))}
+         ($ devtools* props)))))
 
 (defn hijack-re-frame []
   (when (exists? js/re-frame.core.subscribe)
@@ -1137,7 +1143,7 @@
 
 (declare render-devtools)
 
-(defn dock-devtools [& {:keys [location unload?]}]
+(defn dock-devtools [& {:keys [location theme unload?]}]
   (swap! window-settings assoc :location location)
   (js/localStorage.setItem ":cljs-devtools/window-location" (name location))
   (if @popout-window
@@ -1146,7 +1152,7 @@
       (reset! devtools-root* nil)
       (when-not unload?
         (.close @popout-window))
-      (js/setTimeout #(render-devtools {:location location}) 50))
+      (js/setTimeout #(render-devtools {:location location :theme theme}) 50))
     (do
       (.unmount @devtools-root*)
       (reset! devtools-root* nil)
@@ -1155,7 +1161,7 @@
         (open-debugger-window @window-settings {:location location})
         (render-devtools {:location location})))))
 
-(defn render-devtools [{:keys [location]}]
+(defn render-devtools [{:keys [location theme]}]
   (let [node (js/document.createElement "div")
         shadow-root (.attachShadow node #js {:mode "open"})
         _ (js/document.body.append node)
@@ -1167,7 +1173,7 @@
 
 (defonce ^:private initialized? (atom false))
 
-(defn init! [{:keys [root shortcut] :as opts}]
+(defn init! [{:keys [root shortcut theme] :as opts}]
   (when-not @initialized?
     (reset! initialized? true)
     (reset! opts* opts)
