@@ -378,16 +378,16 @@
     (cond
       (string? el-type)
       ($ data-view {:data  (.. node -memoizedProps)
-                    :style {:margin 0}})
+                    :style {:margin 0 :overflow-x :auto}})
 
       (reagent-node? node)
       ($ data-view {:data  (let [props (rest (some-> node .-memoizedProps .-argv))]
                              (when (seq props) (vec props)))
-                    :style {:margin 0}})
+                    :style {:margin 0 :overflow-x :auto}})
 
       (uix-node? node)
       ($ data-view {:data  (.. node -memoizedProps -argv)
-                    :style {:margin 0}}))))
+                    :style {:margin 0 :overflow-x :auto}}))))
 
 (defn node->hooks [^js mem-state]
   (when (and mem-state (some? (.-memoizedState mem-state)))
@@ -405,7 +405,7 @@
 (defn node->rf-subs [^js node]
   (->> (node->captured-state node)
        (keep #(when-let [label (rf-sub %)]
-                [($ data-view {:data label :style {:margin 0}})
+                [($ data-view {:data label :style {:margin 0 :overflow-x :auto}})
                  %]))))
 
 (defn node->reactions [^js node]
@@ -455,7 +455,7 @@
                              (set-active false)))})
         ($ data-view
            {:data  value
-            :style {:margin 0}})))))
+            :style {:margin 0 :overflow-x :auto}})))))
 
 (defui reactions-view [{:keys [node set-hint]}]
   (let [reactions (node->reactions node)
@@ -527,24 +527,24 @@
                       ($ :<>
                          ($ :div {:style {:display :flex :gap 8}}
                             ($ :span "callback:")
-                            ($ data-view {:data (aget hook 0) :style {:margin 0}}))
+                            ($ data-view {:data (aget hook 0) :style {:margin 0 :overflow-x :auto}}))
                          ($ :div {:style {:display :flex :gap 8}}
                             ($ :span "deps:")
-                            ($ data-view {:data (vec (aget hook 1)) :style {:margin 0}})))
+                            ($ data-view {:data (vec (aget hook 1)) :style {:margin 0 :overflow-x :auto}})))
 
                       "use-effect"
                       ($ :<>
                          ($ :div {:style {:display :flex :gap 8}}
                             ($ :span "effect:")
-                            ($ data-view {:data (.-create hook) :style {:margin 0}}))
+                            ($ data-view {:data (.-create hook) :style {:margin 0 :overflow-x :auto}}))
                          ($ :div {:style {:display :flex :gap 8}}
                             ($ :span "deps:")
-                            ($ data-view {:data (vec (.-deps hook)) :style {:margin 0}})))
+                            ($ data-view {:data (vec (.-deps hook)) :style {:margin 0 :overflow-x :auto}})))
 
                       "use-ref"
-                      ($ data-view {:data (.. hook -current -current) :style {:margin 0}})
+                      ($ data-view {:data (.. hook -current -current) :style {:margin 0 :overflow-x :auto}})
 
-                      ($ data-view {:data hook :style {:margin 0}}))))))
+                      ($ data-view {:data hook :style {:margin 0 :overflow-x :auto}}))))))
            hooks)))))
 
 (uix/defhook use-resize-handler [{:keys [set-size dir max min location]
@@ -941,7 +941,7 @@
                 "Provided root node doesn't have React app rendered"))
 
            :else ($ error-boundary
-                    ($ :div {:style {:flex 1}}
+                    ($ :div {:style {:flex 1 :max-width "100%"}}
                        ($ toolbar
                           {:state     state
                            :set-state set-state
