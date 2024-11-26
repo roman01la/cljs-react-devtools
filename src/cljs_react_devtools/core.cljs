@@ -195,10 +195,13 @@
          (when-not closed?
            (render-children node state set-state))))))
 
+(def primitive-value?
+  (some-fn number? nil? boolean? string? uuid? keyword? fn?))
+
 (declare data-view closed-data-view)
 
 (defui data-view-map
-  [{:keys [data tag entries-fn key-fn open? set-open closing]
+  [{:keys [data tag entries-fn key-fn open? set-open closing set-open-parent]
     :or   {entries-fn seq
            key-fn     identity}}]
   (let [entries (entries-fn data)]
@@ -220,7 +223,9 @@
                ($ data-view
                   {:data  (key-fn key)
                    :key?  true
-                   :on-click #(set-open not)
+                   :on-click (if (primitive-value? val)
+                               #(set-open-parent false)
+                               #(set-open not))
                    :style {:margin-right 8
                            :margin-left (when (pos? idx)
                                           (if tag
@@ -251,13 +256,16 @@
                 (when (zero? idx)
                   ($ :span
                      (str (when tag (str "#" tag " ")) open)))
-                (if open?
+                (if (= open? idx)
                   ($ data-view
                      {:data  val
                       :style (when (zero? idx) {:margin 0})
+                      :set-open-parent set-open
                       :closing closing})
                   ($ :<>
-                     ($ closed-data-view {:data val :set-open set-open
+                     ($ closed-data-view {:data val
+                                          :set-open set-open
+                                          :idx idx
                                           :style (when-not last-idx? {:margin-right 8})})
                      closing)))))
          data))))
@@ -309,7 +317,7 @@
 (def atomic? (some-fn number? nil? boolean? string? uuid? keyword? fn?))
 
 (defui closed-data-view
-  [{:keys [data style key? set-open]}]
+  [{:keys [data style key? set-open idx]}]
   (let [set-active (uix/use-context hint-ctx)
         colors (uix/use-context theme-ctx)]
     ($ :pre
@@ -319,12 +327,13 @@
                          style)
         :on-mouse-enter #(set-active true)
         :on-mouse-leave #(set-active false)
-        :on-click #(do
-                     (when-not (atomic? data)
-                       (set-open not))
-                     (when-not key?
-                       (.stopPropagation %)
-                       (js/console.dir data)))}
+        :on-click (fn [event]
+                    (when-not (atomic? data)
+                      (set-open #(if % false (or idx true))))
+                    (when-not key?
+                      (.stopPropagation event)))
+        :on-double-click #(when-not key?
+                            (js/console.dir data))}
        (cond
          (map? data) (if (seq data) "{...}" "{}")
          (vector? data) (if (seq data) "[...]" "[]")
@@ -340,7 +349,7 @@
                    "...")))))
 
 (defui ^:memo data-view
-  [{:keys [data style key? on-click open? closing]}]
+  [{:keys [data style key? on-click open? closing set-open-parent]}]
   (let [set-active (uix/use-context hint-ctx)
         colors (uix/use-context theme-ctx)
         [open? set-open] (uix/use-state open?)]
@@ -354,10 +363,11 @@
         :on-click (fn [e]
                     (when on-click (on-click))
                     (when-not key?
-                      (.stopPropagation e)
-                      (js/console.dir data)))}
+                      (.stopPropagation e)))
+        :on-double-click #(when-not key?
+                            (js/console.dir data))}
        (cond
-         (map? data) ($ data-view-map {:data data :open? open? :set-open set-open :closing closing})
+         (map? data) ($ data-view-map {:data data :open? open? :set-open set-open :closing closing :set-open-parent set-open-parent})
          (vector? data) ($ data-view-seq {:data data :brackets ["[" "]"] :open? open? :set-open set-open :closing closing})
          (set? data) ($ data-view-seq {:data data :brackets ["#{" "}"] :open? open? :set-open set-open :closing closing})
          (seq? data) ($ data-view-seq {:data data :brackets ["(" ")"] :open? open? :set-open set-open :closing closing})
@@ -618,7 +628,7 @@
     (uix/use-effect
       (fn []
         (if active?
-          (set-hint "click on the value to log it to console")
+          (set-hint "double click on the value to log it to console")
           (set-hint "")))
       [active? set-hint])
     ($ :div
