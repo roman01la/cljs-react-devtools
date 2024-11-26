@@ -30,7 +30,7 @@ https://github.com/roman01la/cljs-react-devtools/assets/1355501/c3bd8d6d-1127-44
 1. Install the library via Git deps
 
 ```clojure
-{:deps {com.github.roman01la/cljs-react-devtools {:mvn/version "0.1.0"}}}
+{:deps {com.github.roman01la/cljs-react-devtools {:mvn/version "0.2.0"}}}
 ```
 
 2. Create preload namespace and initialize DevTools
