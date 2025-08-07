@@ -892,6 +892,20 @@
           (.observe obs root #js {:childList true :subtree true :attributes true})
           #(.disconnect obs)))
       [root])
+    (uix/use-effect
+      (fn []
+        (let [handler #(cond
+                         (and inspecting? (= "Escape" (.-key %)))
+                         (set-inspecting false)
+
+                         (and (not inspecting?)
+                              (= "c" (.-key %))
+                              (.-shiftKey %)
+                              (.-metaKey %))
+                         (set-inspecting true))]
+          (.addEventListener js/window "keydown" handler)
+          #(.removeEventListener js/window "keydown" handler)))
+      [inspecting?])
     ($ :<>
       (when (or inspecting? preview-node)
         (uix.dom/create-portal
