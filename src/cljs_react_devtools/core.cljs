@@ -154,9 +154,14 @@
 
 (def preview-ctx (uix/create-context))
 
-(defn has-non-primitive-children? [node]
-  (let [children (node->siblings (fiber->child node))]
-    (some #(nil? (.-elementType %)) children)))
+(defn has-children? [node hide-dom?]
+  (cond->> (node->siblings (fiber->child node))
+           hide-dom? (filter (fn [node]
+                               (->> node
+                                    (tree-seq #(some? (fiber->child %)) #(node->siblings (fiber->child %)))
+                                    (filter #(and (.-elementType %) (not (string? (.-elementType %)))))
+                                    seq)))
+           :always seq))
 
 
 (defui tree-view [{:keys [^js node state set-state]}]
@@ -174,26 +179,27 @@
       (render-children node state set-state)
 
       :else
-      ($ :div {:style {:margin "4px 0 4px 8px"}}
-         (when-not (has-non-primitive-children? node)
-           ($ :span {:style {:margin "0 4px 0 0"
-                             :color (:icon-chevron colors)
-                             :display :inline-block
-                             :transition "transform 100ms ease-in-out"
-                             :transform (if closed? "rotate(-90deg)" "rotate(0deg)")}}
-              icon-chevron-down))
-         ($ button
-            {:style    {:color      (:highlight-text colors)
-                        :user-select :none
-                        :background (when selected? (:highlight-bg colors))}
-             :on-mouse-enter #(set-preview-node node)
-             :on-mouse-leave #(set-preview-node nil)
-             :on-click #(do (set-state (assoc state :selected node))
-                            (when selected?
-                              (set-closed not)))}
-            (node->name node))
-         (when-not closed?
-           (render-children node state set-state))))))
+      (let [children? (has-children? node hide-dom?)]
+        ($ :div {:style {:margin (if children? "4px 0 4px 8px" "4px 0 4px 12px")}}
+           (when children?
+             ($ :span {:style {:margin "0 4px 0 0"
+                               :color (:icon-chevron colors)
+                               :display :inline-block
+                               :transition "transform 100ms ease-in-out"
+                               :transform (if closed? "rotate(-90deg)" "rotate(0deg)")}}
+                icon-chevron-down))
+           ($ button
+              {:style    {:color      (:highlight-text colors)
+                          :user-select :none
+                          :background (when selected? (:highlight-bg colors))}
+               :on-mouse-enter #(set-preview-node node)
+               :on-mouse-leave #(set-preview-node nil)
+               :on-click #(do (set-state (assoc state :selected node))
+                              (when selected?
+                                (set-closed not)))}
+              (node->name node))
+           (when-not closed?
+             (render-children node state set-state)))))))
 
 (def primitive-value?
   (some-fn number? nil? boolean? string? uuid? keyword? fn?))
